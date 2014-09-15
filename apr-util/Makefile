@@ -28,7 +28,7 @@ include $(INCLUDE_DIR)/nls.mk
 define Package/libaprutil
   SECTION:=libs
   CATEGORY:=Libraries
-  DEPENDS:=+libapr +libexpat +libsqlite3 +libuuid $(ICONV_DEPENDS)
+  DEPENDS:=+libapr +libexpat +libsqlite3 +libuuid +libiconv
   TITLE:=Apache Portable Runtime Utility Library
   URL:=http://apr.apache.org/
 endef
