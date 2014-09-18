@@ -1,0 +1,15 @@
+diff -r bebd02e8bed4 -r 77b64fb10075 Makefile
+--- a/config.mk	Thu Jul 07 13:34:54 2011 +0100
++++ b/config.mk	Thu Jul 07 16:50:05 2011 +0000
+@@ -54,2 +54,2 @@
+ # size', but will use slightly less memory and CPU time.
+-WITH_MEMORY_TRACKING:=yes
++WITH_MEMORY_TRACKING:=no
+
+--- a/config.mk	Thu Jul 07 13:34:54 2011 +0100
++++ b/config.mk	Thu Jul 07 16:50:05 2011 +0000
+@@ -70,2 +70,2 @@
+ # Build with SRV lookup support.
+-WITH_SRV:=yes
++WITH_SRV:=no
+
