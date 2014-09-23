@@ -27,5 +27,5 @@ TARGET_LINK_LIBRARIES(vlmcsd pthread dl)
 
 
 INSTALL(TARGETS vlmcsd
-	RUNTIME DESTINATION /usr/bin
+	RUNTIME DESTINATION /usr/sbin
 )

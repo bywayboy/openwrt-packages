@@ -1,7 +1,7 @@
 include $(TOPDIR)/rules.mk
 
 PKG_NAME:=vlmcsd
-PKG_VERSION:=498
+PKG_VERSION:=svn498
 PKG_RELEASE:=1
 PKG_REV:=1
 
@@ -33,13 +33,14 @@ define Build/Prepare
 endef
 
 #[安装(编译)时执行的脚本 记得加上#!/bin/sh 没有就空着]
-define Package/libuv/install
+define Package/vlmcsd/install
 	$(INSTALL_DIR) $(1)/usr/sbin
 	$(CP) $(PKG_INSTALL_DIR)/usr/sbin/vlmcsd $(1)/usr/sbin/
 	
 	$(INSTALL_DIR) $(1)/etc/init.d
 	$(INSTALL_BIN) ./files/etc/init.d/vlmcsd $(1)/etc/init.d/vlmcsd
 	
+	$(INSTALL_DIR) $(1)/etc/rc.d
 	ln -s ../init.d/vlmcsd $(1)/etc/rc.d/S90vlmcsd
 endef
 
