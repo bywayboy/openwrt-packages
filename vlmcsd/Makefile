@@ -14,10 +14,11 @@ include $(INCLUDE_DIR)/package.mk
 include $(INCLUDE_DIR)/cmake.mk
 
 define Package/vlmcsd
-  SECTION:=Utils
-  CATEGORY:=Utils
+  SECTION:=net
+  CATEGORY:=Network
+  SUBMENU:=Other Servers
   TITLE:=KMS server on OpenWRT
-  URL:=https://github.com/joyent/libuv
+  URL:=https://github.com/bywayboy/openwrt-packages
   DEPENDS:= +libpthread 
 endef
 
