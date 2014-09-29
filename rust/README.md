@@ -19,21 +19,31 @@ RUST language package for OpenWRT
 *	打开 110-enable-zlib.patch
 *	用如下内容覆盖
 ```
---- 
-Modules/Setup.dist | 2 +- 
-1 file changed, 1 insertion(+), 1 deletion(-) 
+---
+ Modules/Setup.dist |    2 +-
+ 1 file changed, 1 insertion(+), 1 deletion(-)
 
---- a/Modules/Setup.dist 
-+++ b/Modules/Setup.dist 
-@@ -460,7 +460,9 @@ GLHACK=-Dclear=__GLclear 
-# Andrew Kuchling's zlib module. 
-# This require zlib 1.1.3 (or later). 
-# See http://www.gzip.org/zlib/ 
--#zlib zlibmodule.c -I$(prefix)/include -L$(exec_prefix)/lib -lz 
-+zlib zlibmodule.c -lz 
-+bz2 bz2module.c -lbz2
+--- a/Modules/Setup.dist
++++ b/Modules/Setup.dist
+@@ -460,7 +460,9 @@ GLHACK=-Dclear=__GLclear
+ # Andrew Kuchling's zlib module.
+ # This require zlib 1.1.3 (or later).
+ # See http://www.gzip.org/zlib/
+-#zlib zlibmodule.c -I$(prefix)/include -L$(exec_prefix)/lib -lz
++zlib zlibmodule.c -lz
++bz2 bz2module.c -lbz2	
 +thread threadmodule.c -lpthread
+ 
+ # Interface to the Expat XML parser
+ #
+```
 
-# Interface to the Expat XML parser 
-#
+*	打开package/feeds/packages/python/Makefile 文件,找到 `define Host/Configure` 节,将里面的 --without-threads 修改成 --with-threads
+*	最后执行 make package/feeds/packages/python/host/install V=s.
+
+
+### 编译 rust
+
+```
+make package/rust/host/install V=s
 ```
