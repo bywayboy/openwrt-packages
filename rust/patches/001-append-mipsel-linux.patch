@@ -1,0 +1,40 @@
+diff -uNr ./a/mk/platform.mk ./b/mk/platform.mk
+--- a/mk/platform.mk
++++ b/mk/platform.mk
+@@ -404,6 +404,36 @@
+ RUSTC_FLAGS_mipsel-linux := -C target-cpu=mips32 -C target-feature="+mips32,+o32"
+ 
+ 
++# mipsel-openwrt-linux-uclibc configuration
++CC_mipsel-openwrt-linux-uclibc=mipsel-openwrt-linux-uclibc-gcc
++CXX_mipsel-openwrt-linux-uclibc=mipsel-openwrt-linux-uclibc-g++
++CPP_mipsel-openwrt-linux-uclibc=mipsel-openwrt-linux-uclibc-gcc
++AR_mipsel-openwrt-linux-uclibc=mipsel-openwrt-linux-uclibc-ar
++CFG_LIB_NAME_mipsel-openwrt-linux-uclibc=lib$(1).so
++CFG_STATIC_LIB_NAME_mipsel-openwrt-linux-uclibc=lib$(1).a
++CFG_LIB_GLOB_mipsel-openwrt-linux-uclibc=lib$(1)-*.so
++CFG_LIB_DSYM_GLOB_mipsel-openwrt-linux-uclibc=lib$(1)-*.dylib.dSYM
++CFG_CFLAGS_mipsel-openwrt-linux-uclibc := -mips32 -mabi=32 $(CFLAGS)
++CFG_GCCISH_CFLAGS_mipsel-openwrt-linux-uclibc := -Wall -g -fPIC -mips32 -mabi=32 $(CFLAGS)
++CFG_GCCISH_CXXFLAGS_mipsel-openwrt-linux-uclibc := -fno-rtti $(CXXFLAGS)
++CFG_GCCISH_LINK_FLAGS_mipsel-openwrt-linux-uclibc := -shared -fPIC -g -mips32
++CFG_GCCISH_DEF_FLAG_mipsel-openwrt-linux-uclibc := -Wl,--export-dynamic,--dynamic-list=
++CFG_GCCISH_PRE_LIB_FLAGS_mipsel-openwrt-linux-uclibc := -Wl,-whole-archive
++CFG_GCCISH_POST_LIB_FLAGS_mipsel-openwrt-linux-uclibc := -Wl,-no-whole-archive
++CFG_DEF_SUFFIX_mipsel-openwrt-linux-uclibc := .linux.def
++CFG_LLC_FLAGS_mipsel-openwrt-linux-uclibc :=
++CFG_INSTALL_NAME_mipsel-openwrt-linux-uclibc =
++CFG_LIBUV_LINK_FLAGS_mipsel-openwrt-linux-uclibc =
++CFG_EXE_SUFFIX_mipsel-openwrt-linux-uclibc :=
++CFG_WINDOWSY_mipsel-openwrt-linux-uclibc :=
++CFG_UNIXY_mipsel-openwrt-linux-uclibc := 1
++CFG_PATH_MUNGE_mipsel-openwrt-linux-uclibc := true
++CFG_LDPATH_mipsel-openwrt-linux-uclibc :=
++CFG_RUN_mipsel-openwrt-linux-uclibc=
++CFG_RUN_TARG_mipsel-openwrt-linux-uclibc=
++RUSTC_FLAGS_mipsel-openwrt-linux-uclibc := -C target-cpu=mips32 -C target-feature="+mips32,+o32"
++
++
+ # mips-unknown-linux-gnu configuration
+ CC_mips-unknown-linux-gnu=mips-linux-gnu-gcc
+ CXX_mips-unknown-linux-gnu=mips-linux-gnu-g++
