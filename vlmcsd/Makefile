@@ -36,6 +36,8 @@ endef
 define Package/vlmcsd/install
 	$(INSTALL_DIR) $(1)/usr/sbin
 	$(CP) $(PKG_INSTALL_DIR)/usr/sbin/vlmcsd $(1)/usr/sbin/
+	$(INSTALL_DIR) $(1)/etc
+	$(CP) ./files/etc/vlmcsd.ini $(1)/etc/vlmcsd.ini
 	
 	$(INSTALL_DIR) $(1)/etc/init.d
 	$(INSTALL_BIN) ./files/etc/init.d/vlmcsd $(1)/etc/init.d/vlmcsd
