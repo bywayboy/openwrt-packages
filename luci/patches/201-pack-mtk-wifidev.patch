@@ -1,0 +1,53 @@
+diff -uNr a/libs/core/luasrc/model/network.lua ./b/libs/core/luasrc/model/network.lua
+--- a/libs/core/luasrc/model/network.lua
++++ b/libs/core/luasrc/model/network.lua
+@@ -1336,19 +1336,20 @@
+ 	self.sid = net
+ 
+ 	local num = { }
+-	local netid
++	local netid,guess_dev
+ 	_uci_real:foreach("wireless", "wifi-iface",
+ 		function(s)
+ 			if s.device then
+ 				num[s.device] = num[s.device] and num[s.device] + 1 or 1
+ 				if s['.name'] == self.sid then
+ 					netid = "%s.network%d" %{ s.device, num[s.device] }
++					if s.mode == "sta" then guess_dev = "apcli0" end
+ 					return false
+ 				end
+ 			end
+ 		end)
+ 
+-	local dev = _uci_state:get("wireless", self.sid, "ifname") or netid
++	local dev = _uci_state:get("wireless", self.sid, "ifname") or guess_dev or netid
+ 
+ 	self.netid  = netid
+ 	self.wdev   = dev
+diff -uNr a/modules/admin-full/luasrc/controller/admin/network.lua ./b/modules/admin-full/luasrc/controller/admin/network.lua
+--- a/modules/admin-full/luasrc/controller/admin/network.lua
++++ b/modules/admin-full/luasrc/controller/admin/network.lua
+@@ -375,6 +375,7 @@
+ 	local dev
+ 	for dev in devs:gmatch("[%w%.%-]+") do
+ 		rv[#rv+1] = s.wifi_network(dev)
++		if false == rv[#rv]["up"] then rv[#rv]["bssid"]="00:00:00:00:00:00" end
+ 	end
+ 
+ 	if #rv > 0 then
+diff -uNr a/modules/admin-full/luasrc/view/admin_network/wifi_overview.htm ./b/modules/admin-full/luasrc/view/admin_network/wifi_overview.htm
+--- a/modules/admin-full/luasrc/view/admin_network/wifi_overview.htm
++++ b/modules/admin-full/luasrc/view/admin_network/wifi_overview.htm
+@@ -174,6 +174,12 @@
+ 	XHR.poll(5, '<%=luci.dispatcher.build_url("admin", "network", "wireless_status", table.concat(netlist, ","))%>', null,
+ 		function(x, st)
+ 		{
++			if(!st){
++				try{
++					st=eval('('+x.responseText+')');
++				}catch(e){
++				}
++			}
+ 			if (st)
+ 			{
+ 				var assoctable = document.getElementById('iw-assoclist');

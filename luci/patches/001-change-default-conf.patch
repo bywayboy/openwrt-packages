@@ -1,0 +1,32 @@
+--- a/libs/web/root/etc/config/luci
++++ b/libs/web/root/etc/config/luci 
+@@ -1,7 +1,7 @@
+ config core main
+-	option lang auto
+-	option mediaurlbase /luci-static/openwrt.org
+-	option resourcebase /luci-static/resources
++	option lang 'zh-cn'
++	option mediaurlbase '/luci-static/bootstrap'
++	option resourcebase '/luci-static/resources'
+ 	
+ config extern flash_keep
+ 	option uci 		"/etc/config/"
+@@ -13,7 +13,8 @@
+ 	option uploads	"/lib/uci/upload/"
+ 	
+ config internal languages
+-	
++	option zh_cn 'chinese'
++
+ config internal sauth
+ 	option sessionpath "/tmp/luci-sessions"
+ 	option sessiontime 3600
+@@ -21,4 +22,6 @@
+ config internal ccache
+ 	option enable 1
+ 		
+-config internal themes
++config internal 'themes'
++    option Bootstrap '/luci-static/bootstrap'
++    option OpenWrt '/luci-static/openwrt.org'
+

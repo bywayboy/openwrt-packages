@@ -68,4 +68,13 @@ define Package/git/install
 	$(CP) $(PKG_INSTALL_DIR)/* $(1)/
 endef
 
+# [安装前执行的脚本 记得加上#!/bin/sh 没有就空着]
+define Package/$(PKG_NAME)/preinst
+#!/bin/sh
+
+touch /etc/shells
+echo /usr/bin/git-shell >> /etc/shells
+
+endef
+
 $(eval $(call BuildPackage,git))
