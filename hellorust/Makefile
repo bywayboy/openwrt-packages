@@ -52,8 +52,8 @@ define Build/InstallDev
 endef
 
 define Package/hellorust/install
-	$(INSTALL_DIR) $(1)/usr/bin
-	$(INSTALL_BIN) $(PKG_BUILD_DIR)/usr/bin/hellorust $(1)/usr/sbin/
+	$(INSTALL_DIR) $(1)/usr/sbin
+	$(INSTALL_BIN) $(PKG_BUILD_DIR)/hellorust $(1)/usr/sbin/
 endef
 
 
