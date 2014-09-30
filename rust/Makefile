@@ -1,17 +1,17 @@
 include $(TOPDIR)/rules.mk
 
 PKG_NAME:=rust
-PKG_VERSION:=0.11.0
+PKG_VERSION:=0.12.0-nightly
 PKG_RELEASE:=1
 
 PKG_SOURCE_PROTO:=git
-PKG_SOURCE_VERSION:=e31680ac2d2f246fedfd6ac2f02a1d38fbd6f613
+PKG_SOURCE_VERSION:=master
 PKG_SOURCE_SUBDIR:=$(PKG_NAME)-$(PKG_VERSION)
 
 PKG_SOURCE_URL:=https://github.com/rust-lang/$(PKG_NAME).git
 PKG_SOURCE:=$(PKG_NAME)-$(PKG_VERSION)-$(PKG_SOURCE_VERSION).tar.gz
 
-PKG_BUILD_DIR:=$(BUILD_DIR)/$(PKG_NAME)-$(PKG_VERSION)/$(PKG_NAME)-$(PKG_VERSION)
+PKG_BUILD_DIR:=$(BUILD_DIR)/$(PKG_NAME)-$(PKG_VERSION)
 
 PKG_BUILD_PARALLEL:=1
 HOST_BUILD_PARALLEL:=1
@@ -61,18 +61,20 @@ HOST_CONFIGURE_VARS = \
 	--prefix=$(STAGING_DIR_HOST) \
 	--disable-jemalloc \
 	--disable-docs
-	
+
 
 define Host/Configure
 	CC=$(HOSTCC_NOCACHE)
-	cd $(HOST_BUILD_DIR) &&	./configure \
-		$(HOST_CONFIGURE_VARS)
+	( \
+		cd $(HOST_BUILD_DIR) &&	./configure \
+		$(HOST_CONFIGURE_VARS) \
+	)
 endef
 
 define Host/Compile
 	( \
 		cd $(HOST_BUILD_DIR) && $(MAKE) \
-	 )
+	)
 endef
 
 define Host/Install
