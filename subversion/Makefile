@@ -83,7 +83,7 @@ CONFIGURE_ARGS += \
 	--enable-nls \
 	--disable-mod-activation \
 	--with-apr="$(BUILD_DIR)/apr-1.5.1/apr-1-config" \
-	--with-apr-util="$(BUILD_DIR)/apr-util-1.5.3/apu-1-config" \
+	--with-apr-util="$(BUILD_DIR)/apr-util-1.5.4/apu-1-config" \
 	--with-sqlite="$(STAGING_DIR)/usr" \
 	--with-sasl \
 	--without-serf \
