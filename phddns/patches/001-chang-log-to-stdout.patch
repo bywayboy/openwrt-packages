@@ -1,0 +1,30 @@
+diff -uNr a/src/log.c b/src/log.c
+--- a/src/log.c	2011-08-25 12:53:21.000000000 +0800
++++ b/src/log.c	2014-10-02 18:17:46.130604532 +0800
+@@ -37,24 +37,12 @@
+ {
+ 	logLevel = level;
+ 
+-	if (logFile)
+-		log_close();
+-
+-	if (file && *file)
+-		logFile = fopen(file, "a+");
+-	if (!logFile) 
+-	{
+-		logFile = stderr;
+-		if (file && *file)
+-			LOG(1) ("Error open log file: %s\n", file);
+-	}
+-	//for test only!!!
+-	//logFile = stderr;
++	logFile = stdout;
+ }
+ 
+ void log_close()
+ {
+-	if (logFile && logFile != stderr) {
++	if (logFile && logFile != stdout) {
+ 		fclose(logFile);
+ 		logFile = NULL;
+ 	}
