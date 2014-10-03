@@ -3,7 +3,9 @@
 # Author bywayboy<bywayboy@qq.com>
 # Last Update: 2014-09-23
 
-START=90
+. /lib/functions.sh
+
+START=93
 
 EXECUTEBIN="/usr/sbin/vlmcsd"
 PIDFILE="/var/run/vlmcsd.pid"
@@ -11,6 +13,8 @@ INIFILE="/etc/vlmcsd.ini"
 CONFIGFILE=""
 LISTENPORT=1688
 ENABLED='1'
+
+config_load "vlmcsd"
 
 parse_vlmcsd()
 {

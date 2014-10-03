@@ -43,7 +43,7 @@ define Package/vlmcsd/install
 	$(INSTALL_BIN) ./files/etc/init.d/vlmcsd $(1)/etc/init.d/vlmcsd
 	
 	$(INSTALL_DIR) $(1)/etc/rc.d
-	ln -s ../init.d/vlmcsd $(1)/etc/rc.d/S90vlmcsd
+	ln -s ../init.d/vlmcsd $(1)/etc/rc.d/S93vlmcsd
 endef
 
 $(eval $(call BuildPackage,vlmcsd)) 
