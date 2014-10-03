@@ -1,6 +1,7 @@
 #ifndef __kms_h
 #define __kms_h
 
+#include "sys/time.h"
 #include "vlmcsd.h"
 #include "types.h"
 //
@@ -167,7 +168,7 @@ typedef struct
 #define KMS_ID_VISTA 0
 #define KMS_ID_WIN7 1
 #define KMS_ID_WIN8_VL 2
-#define KMS_ID_WIN8_BETA 3
+#define KMS_ID_WIN_BETA 3
 #define KMS_ID_WIN8_RETAIL 4
 #define KMS_ID_WIN81_VL 5
 #define KMS_ID_WIN81_RETAIL 6
@@ -181,6 +182,7 @@ typedef struct
 #define KMS_ID_WIN2012R2 14
 #define KMS_ID_OFFICE2010 15
 #define KMS_ID_OFFICE2013 16
+#define KMS_ID_WIN_SRV_BETA 17
 
 #define PWINGUID &AppList[APP_ID_WINDOWS].guid
 #define POFFICE2010GUID &AppList[APP_ID_OFFICE2010].guid
@@ -193,19 +195,18 @@ BYTE *CreateRequestV6(size_t *size, const REQUEST* requestBase);
 void RandomPidInit();
 void Get16RandomBytes(void* ptr);
 void Hex2bin(BYTE *const bin, const char *hex, const size_t maxbin);
-size_t utf8_to_ucs2(WCHAR* const ucs2_le, const char* const utf8, const size_t maxucs2, const size_t maxutf8);
-WCHAR utf8_to_ucs2_char (const unsigned char * input, const unsigned char ** end_ptr);
-BOOL ucs2_to_utf8(const WCHAR* const ucs2_le, char* utf8, size_t maxucs2, size_t maxutf8);
 RESPONSE_RESULT DecryptResponseV6(RESPONSE_V6* Response_v6, int responseSize, uint8_t* const response, const uint8_t* const request, BYTE* hwid);
 RESPONSE_RESULT DecryptResponseV4(RESPONSE_V4* Response_v4, const int responseSize, uint8_t* const response, const uint8_t* const request);
 void GetUnixTimeAsFileTime(FILETIME *const ts);
 __pure int64_t FileTimeToUnixTime(const FILETIME *const ts);
-const char* GetProductName(GUID guid, const KmsIdList* List, int *i);
+const char* GetProductNameHE(const GUID *const guid, const KmsIdList *const List, ProdListIndex_t *const i);
+const char* GetProductNameLE(const GUID *const guid, const KmsIdList *const List, ProdListIndex_t *const i);
+__pure ProdListIndex_t GetExtendedProductListSize();
+__pure ProdListIndex_t GetAppListSize(void);
 
 extern const KmsIdList ProductList[];
 extern const KmsIdList AppList[];
-extern const KmsIdList ExtendedProductList [];
-extern __pure uint8_t GetExtendedProductListSize();
+extern const KmsIdList ExtendedProductList[];
 
 #ifdef _PEDANTIC
 uint16_t IsValidLcid(const uint16_t Lcid);

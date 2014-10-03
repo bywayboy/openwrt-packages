@@ -43,12 +43,6 @@ int main(int argc, CARGV argv)
 			return client_main(argc - 1, argv + 1);
 	}
 
-	/*#if (defined(_WIN32) || defined(__CYGWIN__))
-	errorout("Fatal: Please run %s using symbolic links called vlmcsd.exe and vlmcs.exe.\n", *argv);
-	#else // native Unix
-	errorout("Fatal: Please run %s using symbolic links called vlmcsd and vlmcs.\n", *argv);
-	#endif // native Unix*/
-
 	errorout(
 			"vlmcsdmulti %s\n\n"
 			"Usage:\n"

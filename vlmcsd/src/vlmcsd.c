@@ -10,7 +10,7 @@ static uint_fast8_t maxsockets = 0;
 static int shmid = -1;
 #endif
 
-#if __ANDROID__ // Bionic does not wrap these syscalls
+#if __ANDROID__ // Bionic does not wrap these syscalls (willingly because Google fears, developers don't know how to use it)
 static int shmget(key_t key, size_t size, int shmflg)
 {
        return syscall(__NR_shmget, key, size, shmflg);
@@ -23,13 +23,13 @@ static void *shmat(int shmid, const void *shmaddr, int shmflg)
 }
 
 
-int shmdt(const void *shmaddr)
+static int shmdt(const void *shmaddr)
 {
   return syscall(__NR_shmdt, shmaddr);
 }
 
 
-int shmctl(int shmid, int cmd, /*struct shmid_ds*/void *buf)
+static int shmctl(int shmid, int cmd, /*struct shmid_ds*/void *buf)
 {
   return syscall(__NR_shmctl, shmid, cmd, buf);
 }
@@ -108,7 +108,7 @@ static __noreturn void Usage(const char *const argv0)
 			#ifndef NO_RANDOM_EPID
 			"  -r 0|1|2		set ePID randomization level (default 1)\n"
 			"  -C <LCID>		Use fixed <LCID> in random ePIDs\n"
-			#endif
+			#endif // !defined(_WIN32) && !defined(NO_USER_SWITCH)
 			#ifndef NO_SOCKETS
 			"  -4			use IPv4 (no effect if -L is used)\n"
 			"  -6			use IPv6 (no effect if -L is used)\n"
@@ -121,7 +121,7 @@ static __noreturn void Usage(const char *const argv0)
 			"  -s			install vlmcsd as an NT service. Ignores -e"
 			#ifndef _WIN32
 			", -f and -D"
-			#endif
+			#endif // _WIN32
 			". Can't be used with -I\n"
 			"  -S			remove vlmcsd service. Ignores all other options\n"
 			"  -U <username>		run NT service as <username>. Must be used with -s\n"
@@ -143,14 +143,14 @@ static __noreturn void Usage(const char *const argv0)
 			"  -d\t\t\tdisconnect clients after each request\n"
 			#ifndef NO_PID_FILE
 			"  -p <file>		write pid to <file>\n"
-			#endif
+			#endif // NO_PID_FILE
 			#ifndef NO_INI_FILE
 			"  -i <file>		load KMS ePIDs from <file>\n"
-			#endif
+			#endif // NO_INI_FILE
 			#ifndef NO_CUSTOM_INTERVALS
 			"  -R <interval>		renew activation every <interval> (default 1w)\n"
 			"  -A <interval>		retry activation every <interval> (default 2h)\n"
-			#endif
+			#endif // NO_CUSTOM_INTERVALS
 			#ifndef NO_LOG
 			#ifndef _WIN32
 			"  -l syslog		log to syslog\n"
@@ -180,9 +180,193 @@ static __noreturn void Usage(const char *const argv0)
 #endif // HELP
 
 
+#ifndef NO_INI_FILE
+
+static __pure int isControlCharOrSlash(const char c)
+{
+	if ((unsigned char)c < '!') return !0;
+	if (c == '/') return !0;
+	return 0;
+}
+
+static void IniFileNextWord(const char **s)
+{
+	while ( **s && isspace((int)**s) ) (*s)++;
+}
+
+
+static BOOL SetHwIdFromIniFileLine(const char **s, const ProdListIndex_t index)
+{
+	IniFileNextWord(s);
+
+	if (**s == '/')
+	{
+		if (KmsResponseParameters[index].HwId) return FALSE;
+
+		BYTE* HwId = (BYTE*)malloc(sizeof(((RESPONSE_V6 *)0)->HwId));
+		if (!HwId) return FALSE;
+
+		Hex2bin(HwId, *s+1, sizeof(((RESPONSE_V6 *)0)->HwId));
+		KmsResponseParameters[index].HwId = HwId;
+		KmsResponseParameters[index].HwIdFromMalloc = TRUE;
+	}
+
+	return TRUE;
+}
+
+
+static BOOL CheckGuidInIniFileLine(const char **s, ProdListIndex_t *const index)
+{
+	GUID AppGuid;
+
+	IniFileNextWord(s);
+	if (!String2Uuid(*s, &AppGuid)) return FALSE;
+
+	(*s) += GUID_STRING_LENGTH;
+	GetProductNameHE(&AppGuid, AppList, index);
+
+	if (*index > GetAppListSize()) return FALSE;
+	IniFileNextWord(s);
+	if ( *(*s)++ != '=' ) return FALSE;
+
+	return TRUE;
+}
+
+
+static BOOL SetEpidFromIniFileLine(const char **s, const ProdListIndex_t index)
+{
+	IniFileNextWord(s);
+	const char *savedPosition = *s;
+	uint_fast16_t i;
+
+	for (i = 0; !isControlCharOrSlash(**s); i++)
+	{
+		if (utf8_to_ucs2_char((const unsigned char*)*s, (const unsigned char**)s) == (WCHAR)~0)
+		{
+			return FALSE;
+		}
+	}
+
+	if (i < 1 || i >= PID_BUFFER_SIZE) return FALSE;
+	if (KmsResponseParameters[index].Epid) return FALSE;
+
+	size_t size = *s - savedPosition + 1;
+
+	char* epidbuffer = (char*)malloc(size);
+	if (!epidbuffer) return FALSE;
+
+	memcpy(epidbuffer, savedPosition, size - 1);
+	epidbuffer[size - 1] = 0;
+
+	KmsResponseParameters[index].EpidFromMalloc = TRUE;
+	KmsResponseParameters[index].Epid = epidbuffer;
+
+	#ifndef NO_LOG
+	KmsResponseParameters[index].EpidSource = fn_ini;
+	#endif //NO_LOG
+
+	return TRUE;
+}
+
+
+static BOOL ReadIniFile()
+{
+	char  str_file[256];
+	const char *s;
+	ProdListIndex_t appIndex;
+
+	FILE *restrict f;
+	BOOL result = TRUE;
+
+	if ( !fn_ini || !(f = fopen(fn_ini, "r") )) return FALSE;
+
+	while ( (s = fgets(str_file, sizeof(str_file), f)) )
+	{
+		if (!CheckGuidInIniFileLine(&s, &appIndex)) continue;
+		SetEpidFromIniFileLine(&s, appIndex);
+		SetHwIdFromIniFileLine(&s, appIndex);
+	}
+
+	if (ferror(f)) result = FALSE;
+
+	fclose(f);
+	return result;
+}
+#endif // NO_INI_FILE
+
 
 #if !defined(NO_SOCKETS)
 #if !defined(_WIN32)
+static void HangupHandler(const int signal)
+{
+	#ifdef USE_THREADS // Some fix for buggy pthread implementations
+
+	static int_fast8_t inHandler;
+
+	if (inHandler) return;
+	inHandler = TRUE;
+	#endif // USE_THREADS
+
+	#if defined(NO_INI_FILE) && defined(NO_RANDOM_EPID)
+
+	#ifndef NO_LOG
+	logger("Hangup: No configuration to refresh.\n");
+	#endif // NO_LOG
+
+	#else // !defined(NO_INI_FILE) || !defined(NO_RANDOM_EPID)
+	#ifndef NO_LOG
+	logger("Hangup: Refreshing configuration.\n");
+	#endif // NO_LOG
+
+	ProdListIndex_t i;
+
+	// Wait for worker threads no longer accessing the ePID / HWID configuration
+	if (lock_write(SighupLock))
+	{
+		#ifdef USE_THREADS
+		inHandler = FALSE;
+		#endif // USE_THREADS
+		return;
+	}
+
+	for (i = 0; i < MAX_KMSAPPS; i++)
+	{
+		if (KmsResponseParameters[i].EpidFromMalloc)
+		{
+			free((void*)KmsResponseParameters[i].Epid);
+			KmsResponseParameters[i].Epid = NULL;
+		}
+
+		if (KmsResponseParameters[i].HwIdFromMalloc)
+		{
+			free((void*)KmsResponseParameters[i].HwId);
+			KmsResponseParameters[i].HwId = NULL;
+		}
+	}
+
+	#ifndef NO_INI_FILE
+	if (fn_ini && !ReadIniFile())
+	{
+		#ifndef NO_LOG
+		logger("Warning: Can't read %s: %s\n", fn_ini, strerror(errno));
+		#endif
+	}
+	#endif // NO_INI_FILE
+
+	#ifndef NO_RANDOM_EPID
+	if (RandomizationLevel == 1) RandomPidInit();
+	#endif // NO_RANDOM_EPID
+
+	// Free worker threads
+	unlock_write(SighupLock);
+
+	#endif // !defined(NO_INI_FILE) || !defined(NO_RANDOM_EPID)
+
+	#ifdef USE_THREADS
+	inHandler = FALSE;
+	#endif // USE_THREADS
+}
+
 static void TerminationHandler(const int signal)
 {
 	CleanUp();
@@ -205,26 +389,28 @@ static int DaemonizeAndSetSignalAction()
 		return(errno);
 	}
 
-	#ifndef USE_THREADS
-
-	sa.sa_handler = SIG_IGN;
-	sa.sa_flags   = SA_NOCLDWAIT;
-
-	if (sigaction(SIGCHLD, &sa, NULL))
-		return(errno);
-
-	#endif // !USE_THREADS
-
 	if (!InetdMode)
 	{
+		#ifndef USE_THREADS
+
+		sa.sa_handler = SIG_IGN;
+		sa.sa_flags   = SA_NOCLDWAIT;
+
+		if (sigaction(SIGCHLD, &sa, NULL))
+			return(errno);
+
+		#endif // !USE_THREADS
+
 		sa.sa_handler = TerminationHandler;
 		sa.sa_flags   = 0;
 
-		if (sigaction(SIGINT, &sa, NULL) ||
-			sigaction(SIGTERM, &sa, NULL))
-		{
-			return(errno);
-		}
+		sigaction(SIGINT, &sa, NULL);
+		sigaction(SIGTERM, &sa, NULL);
+
+		#ifndef NO_SOCKETS
+		sa.sa_handler = HangupHandler;
+		sigaction(SIGHUP, &sa, NULL);
+		#endif // NO_SOCKETS
 	}
 
 	return 0;
@@ -249,12 +435,16 @@ static BOOL TerminationHandler(const DWORD fdwCtrlType)
 			return FALSE;
 	}
 }
+
+
 static DWORD DaemonizeAndSetSignalAction()
 {
 	if(!SetConsoleCtrlHandler( (PHANDLER_ROUTINE) TerminationHandler, TRUE ))
 	{
+		#ifndef NO_LOG
 		DWORD rc = GetLastError();
 		logger("Warning: Could not register Windows signal handler: Error %u\n", rc);
+		#endif // NO_LOG
 	}
 
 	return ERROR_SUCCESS;
@@ -272,7 +462,7 @@ static const char *restrict ServicePassword = "";
 #ifndef NO_CUSTOM_INTERVALS
 
 // Convert time span strings (e.g. "2h", "5w") to minutes
-__pure static DWORD TimeSpanString2Minutes(const char *const optarg, const char optchar)
+__pure static DWORD TimeSpanString2Minutes(const char *const restrict optarg, const char optchar)
 {
 	char *unitId;
 
@@ -313,7 +503,7 @@ __pure static DWORD TimeSpanString2Minutes(const char *const optarg, const char 
 // Workaround for Cygwin fork bug (only affects cygwin processes that are Windows services)
 // Best is to compile for Cygwin with threads. fork() is slow and unreliable on Cygwin
 #if !defined(NO_INI_FILE) || !defined(NO_LOG) || !defined(NO_CL_PIDS)
-__pure static char* GetCommandLineArg(char *const optarg)
+__pure static char* GetCommandLineArg(char *const restrict optarg)
 {
 	#if !defined (__CYGWIN__) || defined(USE_THREADS)
 		return optarg;
@@ -330,23 +520,44 @@ __pure static char* GetCommandLineArg(char *const optarg)
 
 static void ParseGeneralArguments() {
 	int o;
+
+	#ifndef NO_CL_PIDS
+	BYTE* HwId;
+	#endif // NO_CL_PIDS
+
 	for (opterr = 0; ( o = getopt(global_argc, (char* const*)global_argv, optstring) ) > 0; ) switch (o)
 	{
 		#ifndef NO_CL_PIDS
 		case 'w':
-			CommandLineEpid[0] = GetCommandLineArg(optarg);
+			KmsResponseParameters[APP_ID_WINDOWS].Epid          = GetCommandLineArg(optarg);
+			#ifndef NO_LOG
+			KmsResponseParameters[APP_ID_WINDOWS].EpidSource    = "command line";
+			#endif // NO_LOG
 			break;
 
 		case '0':
-			CommandLineEpid[1] = GetCommandLineArg(optarg);
+			KmsResponseParameters[APP_ID_OFFICE2010].Epid       = GetCommandLineArg(optarg);
+			#ifndef NO_LOG
+			KmsResponseParameters[APP_ID_OFFICE2010].EpidSource = "command line";
+			#endif // NO_LOG
 			break;
 
 		case '3':
-			CommandLineEpid[2] = GetCommandLineArg(optarg);
+			KmsResponseParameters[APP_ID_OFFICE2013].Epid       = GetCommandLineArg(optarg);
+			#ifndef NO_LOG
+			KmsResponseParameters[APP_ID_OFFICE2013].EpidSource = "command line";
+			#endif // NO_LOG
 			break;
 
 		case 'H':
-			CommandLineHwId = GetCommandLineArg(optarg);
+			HwId = (BYTE*)malloc(sizeof(((RESPONSE_V6 *)0)->HwId));
+			if (!HwId) break;
+
+			Hex2bin(HwId, optarg, sizeof(((RESPONSE_V6 *)0)->HwId));
+
+			KmsResponseParameters[APP_ID_WINDOWS].HwId = HwId;
+			KmsResponseParameters[APP_ID_OFFICE2010].HwId = HwId;
+			KmsResponseParameters[APP_ID_OFFICE2013].HwId = HwId;
 			break;
 		#endif
 
@@ -521,7 +732,8 @@ static void WritePidFile()
 	{
 		FILE *_f = fopen(fn_pid, "w");
 
-		if ( _f ) {
+		if ( _f )
+		{
 			fprintf(_f, "%u", (uint32_t)getpid());
 			fclose(_f);
 		}
@@ -645,6 +857,9 @@ int server_main(int argc, CARGV argv)
 	int error;
 	#endif // !defined(_NTSERVICE) && !defined(NO_SOCKETS)
 
+	// Initialize ePID / HwId parameters
+	memset(KmsResponseParameters, 0, sizeof(KmsResponseParameters));
+
 	global_argc = argc;
 	global_argv = argv;
 
@@ -699,6 +914,13 @@ int newmain()
 
 	ParseGeneralArguments(); // Does not return if an error occurs
 
+	#ifndef NO_INI_FILE
+	if (fn_ini && !ReadIniFile())
+	{
+		printerrorf("Warning: Can't read %s: %s\n", fn_ini, strerror(errno));
+	}
+	#endif // NO_INI_FILE
+
 	#if !defined(NO_LIMIT) && !defined(NO_SOCKETS)
 	AllocateSemaphore();
 	#endif // !defined(NO_LIMIT) && !defined(NO_SOCKETS)
@@ -720,6 +942,8 @@ int newmain()
 		return !0;
 	}
 	#endif
+
+	RandomNumberInit();
 
 	// Randomization Level 1 means generate ePIDs at startup and use them during
 	// the lifetime of the process. So we generate them now
@@ -748,9 +972,13 @@ int newmain()
 
 	// Clean up things and exit
 	#ifdef _NTSERVICE
-	if (!IsNTService)
+	if (!ServiceShutdown)
 	#endif
-	CleanUp();
+		CleanUp();
+	#ifdef _NTSERVICE
+	else
+		ReportServiceStatus(SERVICE_STOPPED, NO_ERROR, 0);
+	#endif
 
 	return rc;
 }

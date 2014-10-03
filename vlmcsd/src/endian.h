@@ -13,7 +13,7 @@
 #define UA16(p)  UAA16(p, 0)
 
 //
-//Byteswap: Use compiler support, if available
+//Byteswap: Use compiler support if available
 //
 #ifdef __has_builtin // Clang supports this
 

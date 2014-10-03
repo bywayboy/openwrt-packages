@@ -87,7 +87,7 @@ static unsigned int RpcRequestSize(const RPC_REQUEST *const Request, const unsig
 	uint_fast8_t  _v;
 	_v = (uint_fast8_t)LE16(((WORD*)Request->Data)[1]) - 4;
 
-	if ( _v < _countof(_Versions)
+	if ( _v < vlmcsd_countof(_Versions)
 			&& RequestSize >= _Versions[_v].RequestSize + sizeof(RPC_REQUEST) )
 	{
 		#if defined(_PEDANTIC) && !defined(NO_LOG)
@@ -164,8 +164,8 @@ static void CheckRpcBindRequest(const RPC_BIND_REQUEST *const Request, const uns
 
 			if (!IsEqualGUID(&Request->CtxItems[i].InterfaceUUID, InterfaceUuid))
 			{
-				Uuid2String((GUID*)&Request->CtxItems[i].InterfaceUUID, guidBuffer1);
-				Uuid2String((GUID*)InterfaceUuid, guidBuffer2);
+				Uuid2StringLE((GUID*)&Request->CtxItems[i].InterfaceUUID, guidBuffer1);
+				Uuid2StringLE((GUID*)InterfaceUuid, guidBuffer2);
 				logger("Warning: NDR32 Interface UUID is %s but should be %s.\n", guidBuffer1, guidBuffer2);
 			}
 
@@ -282,7 +282,7 @@ void RpcServer(const SOCKET sock, const DWORD RpcAssocGroup)
 {
 	RPC_HEADER  _Header;
 
-	srand ((unsigned int)time(NULL));
+	RandomNumberInit();
 
 	while (_recv(sock, &_Header, sizeof(_Header)))
 	{

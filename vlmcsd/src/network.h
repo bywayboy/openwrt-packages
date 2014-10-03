@@ -1,7 +1,9 @@
 #ifndef INCLUDED_NETWORK_H
 #define INCLUDED_NETWORK_H
 
+#ifndef _GNU_SOURCE
 #define _GNU_SOURCE
+#endif
 
 #include <string.h>
 #ifndef _WIN32

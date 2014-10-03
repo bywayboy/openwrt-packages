@@ -14,12 +14,12 @@ static VOID WINAPI ServiceCtrlHandler(const DWORD dwCtrl)
       case SERVICE_CONTROL_STOP:
       case SERVICE_CONTROL_SHUTDOWN:
 
+    	  ServiceShutdown = TRUE;
     	  ReportServiceStatus(SERVICE_STOP_PENDING, NO_ERROR, 0);
 
     	  // Remove PID file and free ressources
     	  CleanUp();
 
-    	  ReportServiceStatus(SERVICE_STOPPED, NO_ERROR, 0);
     	  return;
 
       /*case SERVICE_CONTROL_INTERROGATE:

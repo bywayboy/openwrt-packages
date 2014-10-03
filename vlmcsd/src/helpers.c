@@ -5,6 +5,133 @@
 #include "helpers.h"
 
 
+/*
+ *  UCS2 <-> UTF-8 functions
+ *  All functions use little endian UCS2 since we only need it to communicate with Windows via RPC
+ */
+
+// Convert one character from UTF-8 to UCS2
+// Returns 0xffff, if utf-8 evaluates to > 0xfffe (outside basic multilingual pane)
+WCHAR utf8_to_ucs2_char (const unsigned char * input, const unsigned char ** end_ptr)
+{
+    *end_ptr = input;
+    if (input[0] == 0)
+        return ~0;
+
+    if (input[0] < 0x80) {
+        *end_ptr = input + 1;
+        return LE16(input[0]);
+    }
+
+    if ((input[0] & 0xE0) == 0xE0) {
+
+    	if (input[1] == 0 || input[2] == 0)
+            return ~0;
+
+    	*end_ptr = input + 3;
+
+    	return
+            LE16((input[0] & 0x0F)<<12 |
+            (input[1] & 0x3F)<<6  |
+            (input[2] & 0x3F));
+    }
+
+    if ((input[0] & 0xC0) == 0xC0) {
+        if (input[1] == 0)
+            return ~0;
+
+        *end_ptr = input + 2;
+
+        return
+            LE16((input[0] & 0x1F)<<6  |
+            (input[1] & 0x3F));
+    }
+    return ~0;
+}
+
+// Convert one character from UCS2 to UTF-8
+// Returns length of UTF-8 char (1, 2 or 3) or -1 on error (UTF-16 outside UCS2)
+// char *utf8 must be large enough to hold 3 bytes
+int ucs2_to_utf8_char (const WCHAR ucs2_le, char *utf8)
+{
+    const WCHAR ucs2 = LE16(ucs2_le);
+
+    if (ucs2 < 0x80) {
+        utf8[0] = ucs2;
+        utf8[1] = '\0';
+        return 1;
+    }
+
+    if (ucs2 >= 0x80  && ucs2 < 0x800) {
+        utf8[0] = (ucs2 >> 6)   | 0xC0;
+        utf8[1] = (ucs2 & 0x3F) | 0x80;
+        utf8[2] = '\0';
+        return 2;
+    }
+
+    if (ucs2 >= 0x800 && ucs2 < 0xFFFF) {
+
+    	if (ucs2 >= 0xD800 && ucs2 <= 0xDFFF) {
+    		/* Ill-formed (UTF-16 ouside of BMP) */
+    		return -1;
+    	}
+
+    	utf8[0] = ((ucs2 >> 12)       ) | 0xE0;
+        utf8[1] = ((ucs2 >> 6 ) & 0x3F) | 0x80;
+        utf8[2] = ((ucs2      ) & 0x3F) | 0x80;
+        utf8[3] = '\0';
+        return 3;
+    }
+
+    return -1;
+}
+
+
+// Converts UTF8 to UCS2. Returns size in bytes of the converted string or -1 on error
+size_t utf8_to_ucs2(WCHAR* const ucs2_le, const char* const utf8, const size_t maxucs2, const size_t maxutf8)
+{
+	const unsigned char* current_utf8 = (unsigned char*)utf8;
+	WCHAR* current_ucs2_le = ucs2_le;
+
+	for (; *current_utf8; current_ucs2_le++)
+	{
+		size_t size = (char*)current_utf8 - utf8;
+
+		if (size >= maxutf8) return (size_t)-1;
+		if (((*current_utf8 & 0xc0) == 0xc0) && (size >= maxutf8 - 1)) return (size_t)-1;
+		if (((*current_utf8 & 0xe0) == 0xe0) && (size >= maxutf8 - 2)) return (size_t)-1;
+		if (current_ucs2_le - ucs2_le >= (intptr_t)maxucs2 - 1) return (size_t)-1;
+
+		*current_ucs2_le = utf8_to_ucs2_char(current_utf8, &current_utf8);
+		current_ucs2_le[1] = 0;
+
+		if (*current_ucs2_le == (WCHAR)-1) return (size_t)-1;
+	}
+	return current_ucs2_le - ucs2_le;
+}
+
+// Converts UCS2 to UTF-8. Return TRUE or FALSE
+BOOL ucs2_to_utf8(const WCHAR* const ucs2_le, char* utf8, size_t maxucs2, size_t maxutf8)
+{
+	char utf8_char[4];
+	const WCHAR* current_ucs2 = ucs2_le;
+	unsigned int index_utf8 = 0;
+
+	for(*utf8 = 0; *current_ucs2; current_ucs2++)
+	{
+		if (current_ucs2 - ucs2_le > (intptr_t)maxucs2) return FALSE;
+		int len = ucs2_to_utf8_char(*current_ucs2, utf8_char);
+		if (index_utf8 + len > maxutf8) return FALSE;
+		strncat(utf8, utf8_char, len);
+		index_utf8+=len;
+	}
+
+	return TRUE;
+}
+
+/* End of UTF-8 <-> UCS2 conversion */
+
+
 // Checks, whether a string is a valid integer number between min and max. Returns TRUE or FALSE. Puts int value in *value
 BOOL StringToInt(const char *const szValue, const int min, const int max, int *const value)
 {
@@ -23,7 +150,54 @@ BOOL StringToInt(const char *const szValue, const int min, const int max, int *c
 }
 
 
-//Checks a command line argument if it is numeric and between min and max. Returns the numeric value
+//Converts a String Guid to a host binary guid in host endianess
+int_fast8_t String2Uuid(const char *const restrict input, GUID *const restrict guid)
+{
+	int i;
+
+	if (strlen(input) < GUID_STRING_LENGTH) return FALSE;
+	if (input[8] != '-' || input[13] != '-' || input[18] != '-' || input[23] != '-') return FALSE;
+
+	for (i = 0; i < GUID_STRING_LENGTH; i++)
+	{
+		if (i == 8 || i == 13 || i == 18 || i == 23) continue;
+
+		const char c = toupper((int)input[i]);
+
+		if (c < '0' || c > 'F' || (c > '9' && c < 'A')) return FALSE;
+	}
+
+	char inputCopy[GUID_STRING_LENGTH + 1];
+	strncpy(inputCopy, input, GUID_STRING_LENGTH + 1);
+	inputCopy[8] = inputCopy[13] = inputCopy[18] = 0;
+
+	Hex2bin((BYTE*)&guid->Data1, inputCopy, 8);
+	Hex2bin((BYTE*)&guid->Data2, inputCopy + 9, 4);
+	Hex2bin((BYTE*)&guid->Data3, inputCopy + 14, 4);
+	Hex2bin(guid->Data4, input + 19, 16);
+
+	guid->Data1 =  BE32(guid->Data1);
+	guid->Data2 =  BE16(guid->Data2);
+	guid->Data3 =  BE16(guid->Data3);
+	return TRUE;
+}
+
+
+// convert GUID to little-endian
+void LEGUID(GUID *const restrict out, const GUID* const restrict in)
+{
+	#if __BYTE_ORDER != __LITTLE_ENDIAN
+	out->Data1 = LE32(in->Data1);
+	out->Data2 = LE16(in->Data2);
+	out->Data3 = LE16(in->Data3);
+	memcpy(out->Data4, in->Data4, sizeof(out->Data4));
+	#else
+	memcpy(out, in, sizeof(GUID));
+	#endif
+}
+
+
+//Checks a command line argument if it is numeric and between min and max. Returns the numeric value or exits on error
 __pure int GetOptionArgumentInt(const char o, const int min, const int max)
 {
 	int result;
@@ -68,6 +242,17 @@ char* win_strerror(const int message)
 }
 
 #endif // _WIN32
+
+
+// Initialize random generator (needs to be done in each thread)
+void RandomNumberInit()
+{
+	struct timeval tv;
+	gettimeofday(&tv, NULL);
+	srand((unsigned int)(tv.tv_sec ^ tv.tv_usec));
+}
+
+
 
 
 
