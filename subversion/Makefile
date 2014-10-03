@@ -26,7 +26,7 @@ define Package/subversion/Default
   SECTION:=net
   CATEGORY:=Network
   TITLE:=A compelling replacement for CVS
-  DEPENDS:=+zlib  +libaprutil +libsasl2 +libmagic +libsqlite3
+  DEPENDS:=+zlib  +libaprutil +libsasl2 +libmagic +libsqlite3 +libopenssl
   URL:=http://subversion.apache.org/
   SUBMENU:=Version Control Systems
 endef
@@ -83,7 +83,7 @@ CONFIGURE_ARGS += \
 	--enable-nls \
 	--disable-mod-activation \
 	--with-apr="$(BUILD_DIR)/apr-1.5.1/apr-1-config" \
-	--with-apr-util="$(BUILD_DIR)/apr-util-1.5.3/apu-1-config" \
+	--with-apr-util="$(BUILD_DIR)/apr-util-1.5.4/apu-1-config" \
 	--with-sqlite="$(STAGING_DIR)/usr" \
 	--with-sasl \
 	--without-serf \
@@ -111,12 +111,21 @@ endef
 
 define Package/subversion-client/install
 	$(INSTALL_DIR) $(1)/usr/bin
-	$(INSTALL_BIN) $(PKG_INSTALL_DIR)/bin/{svn,svnversion,svnsync} $(1)/usr/bin/
+	$(INSTALL_BIN) $(PKG_INSTALL_DIR)/usr/bin/{svn,svnversion,svnsync} $(1)/usr/bin/
 endef
 
 define Package/subversion-server/install
 	$(INSTALL_DIR) $(1)/usr/bin
-	$(INSTALL_BIN) $(PKG_INSTALL_DIR)/bin/svn{look,admin,dumpfilter,serve} $(1)/usr/bin/
+	$(INSTALL_BIN) $(PKG_INSTALL_DIR)/usr/bin/svn{look,admin,dumpfilter,serve} $(1)/usr/bin/
+
+	$(INSTALL_DIR) $(1)/etc/config
+	$(CP) ./files/etc/config/subversion $(1)/etc/config/subversion
+
+	$(INSTALL_DIR) $(1)/etc/init.d
+	$(INSTALL_BIN) ./files/etc/init.d/subversion $(1)/etc/init.d/subversion
+
+	$(INSTALL_DIR) $(1)/etc/rc.d
+	ln -s ../init.d/subversion $(1)/etc/rc.d/S92subversion
 endef
 
 
