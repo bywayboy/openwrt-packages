@@ -85,55 +85,13 @@ static int RequestsToGo = 1;
 static BOOL firstRequestSent = FALSE;
 
 
-__pure static GUID LEGUID(const GUID guid)
+static void String2UuidOrExit(const char *const restrict input, GUID *const restrict guid)
 {
-	GUID result;
-	result.Data1 = LE32(guid.Data1);
-	result.Data2 = LE16(guid.Data2);
-	result.Data3 = LE16(guid.Data3);
-	memcpy(result.Data4, guid.Data4, sizeof(result.Data4));
-
-	return result;
-}
-
-__noreturn static void String2UuidFail(void)
-{
-	errorout("Fatal: Command line contains an invalid GUID.\n");
-	exit(!0);
-}
-
-
-static void String2Uuid(const char *const input, GUID* guid)
-{
-	int i;
-
-	if (strlen(input) != GUID_STRING_LENGTH) String2UuidFail();
-	if (input[8] != '-' || input[13] != '-' || input[18] != '-' || input[23] != '-') String2UuidFail();
-
-	for (i = 0; i < GUID_STRING_LENGTH; i++)
+	if (strlen(input) != GUID_STRING_LENGTH || !String2Uuid(input, guid))
 	{
-		if (i == 8 || i == 13 || i == 18 || i == 23) continue;
-
-		char c = toupper((int)input[i]);
-
-		if (c < '0') String2UuidFail();
-		if (c > 'F') String2UuidFail();
-		if (c > '9' && c < 'A') String2UuidFail();
+		errorout("Fatal: Command line contains an invalid GUID.\n");
+		exit(!0);
 	}
-
-	char inputCopy[GUID_STRING_LENGTH + 1];
-	strncpy(inputCopy, input, GUID_STRING_LENGTH + 1);
-	inputCopy[8] = inputCopy[13] = inputCopy[18] = 0;
-
-	Hex2bin((BYTE*)&guid->Data1, inputCopy, 8);
-	Hex2bin((BYTE*)&guid->Data2, inputCopy + 9, 4);
-	Hex2bin((BYTE*)&guid->Data3, inputCopy + 14, 4);
-	Hex2bin(guid->Data4, input + 19, 16);
-
-	guid->Data1 =  BE32(guid->Data1);
-	guid->Data2 =  BE16(guid->Data2);
-	guid->Data3 =  BE16(guid->Data3);
-	return;
 }
 
 
@@ -495,7 +453,7 @@ static void ParseCommandLinePass2(const char *const programName, const int argc,
 					exit(!0);
 				}
 
-				String2Uuid(optarg, (GUID*)ActiveLicensePack.ApplicationID);
+				String2UuidOrExit(optarg, (GUID*)ActiveLicensePack.ApplicationID);
 				break;
 
 			case 'g': // Set custom "grace" time in minutes (default 30 days)
@@ -505,12 +463,12 @@ static void ParseCommandLinePass2(const char *const programName, const int argc,
 
 			case 's': // Set specfic SKU ID
 
-				String2Uuid(optarg, &ActiveLicensePack.ID);
+				String2UuidOrExit(optarg, &ActiveLicensePack.ID);
 				break;
 
 			case 'k': // Set specific KMS ID
 
-				String2Uuid(optarg, &ActiveLicensePack.KmsID);
+				String2UuidOrExit(optarg, &ActiveLicensePack.KmsID);
 				break;
 
 			case '4': // Force V4 protocol
@@ -587,7 +545,10 @@ void DisplayResponse(const RESPONSE_RESULT result, RESPONSE* response, BYTE *hwi
 	if (!result.DecryptSuccess) return; // Makes no sense to display anything
 
 	char ePID[3 * PID_BUFFER_SIZE];
-	ucs2_to_utf8(response->KmsPID, ePID, PID_BUFFER_SIZE, 3 * PID_BUFFER_SIZE);
+	if (!ucs2_to_utf8(response->KmsPID, ePID, PID_BUFFER_SIZE, 3 * PID_BUFFER_SIZE))
+	{
+		memset(ePID + 3 * PID_BUFFER_SIZE - 3, 0, 3);
+	}
 
 	// Read KMSPID from Response
 	if (!verbose)
@@ -699,7 +660,7 @@ int client_main(const int argc, CARGV argv)
 
 	#endif // _NTSERVICE
 
-	srand((unsigned int)time(NULL));
+	RandomNumberInit();
 	ActiveLicensePack = *LicensePackList; //first license is Windows Vista
 
 	ParseCommandLinePass1(argv[0], argc, argv);
@@ -827,16 +788,16 @@ void CreateRequestBase(REQUEST *Request)
 	Request->IsClientVM = LE32(PretendVM);
 	Request->LicenseStatus = LE32(licenseStatus);
 	Request->GraceTime = LE32(GracePeriodRemaining);
-	Request->AppId = LEGUID(*ActiveLicensePack.ApplicationID);
-	Request->SkuId = LEGUID(ActiveLicensePack.ID);
-	Request->KmsId = LEGUID(ActiveLicensePack.KmsID);
+	LEGUID(&Request->AppId, ActiveLicensePack.ApplicationID);
+	LEGUID(&Request->SkuId, &ActiveLicensePack.ID);
+	LEGUID(&Request->KmsId, &ActiveLicensePack.KmsID);
 
 	GetUnixTimeAsFileTime(&Request->TimeStamp);
 	Request->MinimumClients = LE32(ActiveLicensePack.RequiredClientCount);
 
 	if (ClientGuid)
 	{
-		String2Uuid(ClientGuid, &Request->ClientMachineId);
+		String2UuidOrExit(ClientGuid, &Request->ClientMachineId);
 	}
 	else
 	{

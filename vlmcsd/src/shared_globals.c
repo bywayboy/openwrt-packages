@@ -12,13 +12,13 @@ int global_argc;
 CARGV global_argv;
 const char* const optstring = "m:t:w:0:3:H:A:R:u:g:L:p:i:P:l:r:U:W:C:SsfeDd46VvId";
 const char *const Version = VERSION;
-const char *CommandLineEpid[] = { NULL, NULL, NULL };
-const char *CommandLineHwId = NULL;
 DWORD ActivationInterval = 60 * 2;   // 2 hours
 DWORD RenewalInterval = 60 * 24 * 7; // 7 days
 int_fast8_t UseMultiplexedRpc = TRUE;
 int_fast8_t DisconnectImmediately = FALSE;
 DWORD ServerTimeout = 30;
+
+KmsResponseParam_t KmsResponseParameters[MAX_KMSAPPS];
 
 #if !defined(NO_LIMIT) && !defined (NO_SOCKETS)
 int32_t MaxTasks = SEM_VALUE_MAX;
@@ -61,6 +61,7 @@ HANDLE Semaphore;
 
 #ifdef _NTSERVICE
 int_fast8_t IsNTService = TRUE;
+int_fast8_t ServiceShutdown = FALSE;
 #endif // _NTSERVICE
 
 #ifndef _WIN32
@@ -74,6 +75,16 @@ uid_t uid = INVALID_UID;
 pthread_mutex_t logmutex = PTHREAD_MUTEX_INITIALIZER;
 #else
 CRITICAL_SECTION logmutex;
-#endif // _WIN32
+#endif // !defined(_WIN32) && !defined(__CYGWIN__)
 #endif // USE_THREADS
 #endif // NO_LOG
+
+#ifndef _WIN32
+#ifdef USE_THREADS
+pthread_rwlock_t SighupLock = PTHREAD_RWLOCK_INITIALIZER;
+#endif // USE_THREADS
+#endif // _WIN32
+
+
+
+

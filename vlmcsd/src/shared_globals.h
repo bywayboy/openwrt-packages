@@ -35,6 +35,19 @@
 #include "output.h"
 #include "rpc.h"
 
+#define MAX_KMSAPPS 3
+typedef struct
+{
+	const char* Epid;
+	const BYTE* HwId;
+	#ifndef NO_LOG
+	const char* EpidSource;
+	#endif // NO_LOG
+	//uint_fast8_t HwIdSource;
+	uint_fast8_t EpidFromMalloc;
+	uint_fast8_t HwIdFromMalloc;
+} KmsResponseParam_t, *PKmsResponseParam_t;
+
 #ifndef NO_LIMIT
 #ifndef SEM_VALUE_MAX // Android does not define this
 #ifdef __ANDROID__
@@ -79,11 +92,10 @@ extern int_fast8_t InetdMode;
 extern const char* const optstring;
 extern DWORD ActivationInterval;
 extern DWORD RenewalInterval;
-extern const char *CommandLineEpid[];
-extern const char *CommandLineHwId;
 extern int_fast8_t UseMultiplexedRpc;
 extern int_fast8_t DisconnectImmediately;
 extern DWORD ServerTimeout;
+extern KmsResponseParam_t KmsResponseParameters[MAX_KMSAPPS];
 
 #if !defined(NO_LIMIT) && !defined (NO_SOCKETS)
 extern int32_t MaxTasks;
@@ -117,6 +129,7 @@ extern HANDLE Semaphore;
 
 #ifdef _NTSERVICE
 extern int_fast8_t IsNTService;
+extern int_fast8_t ServiceShutdown;
 #endif
 
 #ifndef _WIN32
@@ -133,5 +146,11 @@ extern CRITICAL_SECTION logmutex;
 #endif // _WIN32
 #endif // USE_THREADS
 #endif // NO_LOG
+
+#ifndef _WIN32
+#ifdef USE_THREADS
+extern pthread_rwlock_t SighupLock;
+#endif // USE_THREADS
+#endif // _WIN32
 
 #endif // INCLUDED_SHARED_GLOBALS_H

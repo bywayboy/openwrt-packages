@@ -168,8 +168,8 @@ SOCKET ConnectToAddress(const char *const addr, const int AddressFamily)
 
 		#endif // _WIN32
 
-		setsockopt(s, SOL_SOCKET, SO_RCVTIMEO, (char*)&to, sizeof(to));
-		setsockopt(s, SOL_SOCKET, SO_SNDTIMEO, (char*)&to, sizeof(to));
+		setsockopt(s, SOL_SOCKET, SO_RCVTIMEO, (sockopt_t)&to, sizeof(to));
+		setsockopt(s, SOL_SOCKET, SO_SNDTIMEO, (sockopt_t)&to, sizeof(to));
 
 		if (!connect(s, sa->ai_addr, sa->ai_addrlen))
 		{
@@ -219,11 +219,11 @@ static int ListenOnAddress(const struct addrinfo *const ai, SOCKET *s)
 	#endif // IPV6_V6ONLY
 
 	#ifdef IPV6_V6ONLY
-	if (ai->ai_family == AF_INET6) setsockopt(*s, IPPROTO_IPV6, IPV6_V6ONLY, (void*)&socketOption, sizeof(socketOption));
+	if (ai->ai_family == AF_INET6) setsockopt(*s, IPPROTO_IPV6, IPV6_V6ONLY, (sockopt_t)&socketOption, sizeof(socketOption));
 	#endif
 
 	#ifndef _WIN32
-	setsockopt(*s, SOL_SOCKET, SO_REUSEADDR, (void*)&socketOption, sizeof(socketOption));
+	setsockopt(*s, SOL_SOCKET, SO_REUSEADDR, (sockopt_t)&socketOption, sizeof(socketOption));
 	#endif
 
 	if (bind(*s, ai->ai_addr, ai->ai_addrlen) || listen(*s, SOMAXCONN))
@@ -434,8 +434,8 @@ static void ServeClient(const SOCKET s_client, const DWORD RpcAssocGroup)
 	#endif // _WIN32
 
 	if (
-		setsockopt(s_client, SOL_SOCKET, SO_RCVTIMEO, (char*)&to, sizeof(to)) ||
-		setsockopt(s_client, SOL_SOCKET, SO_SNDTIMEO, (char*)&to, sizeof(to))
+		setsockopt(s_client, SOL_SOCKET, SO_RCVTIMEO, (sockopt_t)&to, sizeof(to)) ||
+		setsockopt(s_client, SOL_SOCKET, SO_SNDTIMEO, (sockopt_t)&to, sizeof(to))
 	)
 	{
 		#ifndef _WIN32
@@ -571,6 +571,8 @@ static int ServeClientAsyncPosixThreads(const PCLDATA thr_CLData)
 #ifndef USE_THREADS // fork() implementation
 static void ChildSignalHandler(const int signal)
 {
+	if (signal == SIGHUP) return;
+
 	post_sem();
 
 	#ifndef NO_LOG
@@ -604,7 +606,7 @@ static int ServeClientAsyncFork(const SOCKET s_client, const DWORD RpcAssocGroup
 		sa.sa_handler = ChildSignalHandler;
 		sa.sa_flags   = 0;
 
-		static int signallist[] = { SIGINT, SIGTERM, SIGSEGV, SIGILL, SIGFPE, SIGBUS };
+		static int signallist[] = { SIGHUP, SIGINT, SIGTERM, SIGSEGV, SIGILL, SIGFPE, SIGBUS };
 
 		if (!sigemptyset(&sa.sa_mask))
 		{
@@ -663,7 +665,6 @@ int ServeClientAsync(const SOCKET s_client, const DWORD RpcAssocGroup)
 
 int RunServer()
 {
-	srand( (int)time(NULL) );
 	DWORD RpcAssocGroup = rand32();
 
 	// If compiled for inetd-only mode just serve the stdin socket
@@ -689,6 +690,10 @@ int RunServer()
 			error = socket_errno;
 
 			if (error == VLMCSD_EINTR || error == VLMCSD_ECONNABORTED) continue;
+
+			#ifdef _NTSERVICE
+			if (ServiceShutdown) return 0;
+			#endif
 
 			#ifndef NO_LOG
 			logger("Fatal: %s\n",vlmcsd_strerror(error));

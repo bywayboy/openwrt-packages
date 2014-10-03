@@ -3,6 +3,7 @@
 
 #include <stdint.h>
 #include <stdlib.h>
+#include <limits.h>
 
 #ifdef __sun__
 #include <alloca.h>
@@ -41,14 +42,55 @@ typedef struct __packed
 	uint64_t val[0];
 } PACKED64;
 
+// Extend this type to 16 or 32 bits if more than 254 products appear
+typedef uint8_t ProdListIndex_t;
+
+// Deal with Mingw32-w64 C++ header which defines a _countof that is incompatible with vlmcsd
+#define vlmcsd_countof(x)	( sizeof(x) / sizeof(x[0]) )
+
+// PATH_MAX is optional in Posix. We use a default of 260 here
+#ifndef PATH_MAX
+#ifdef _WIN32
+#define PATH_MAX MAX_PATH
+#else
+#define PATH_MAX 260
+#endif // _WIN32
+#endif // !PATH_MAX
+
+#if PATH_MAX > 260
+#define VLMCSD_PATH_MAX 260
+#else
+#define VLMCSD_PATH_MAX PATH_MAX
+#endif
+
+// Synchronization Objects
 
 // Mutexes
+#ifdef USE_THREADS
 #if !defined(_WIN32) && !defined(__CYGWIN__)
 #define lock_mutex(x) pthread_mutex_lock(x)
 #define unlock_mutex(x) pthread_mutex_unlock(x)
 #else
 #define lock_mutex(x) EnterCriticalSection(x)
 #define unlock_mutex(x) LeaveCriticalSection(x)
+#endif
+#else // !USE_THREADS
+//defines to nothing
+#define lock_mutex(x)
+#define unlock_mutex(x)
+#endif // !USE_THREADS
+
+// ReadWrite locks
+#if !defined(_WIN32) && defined(USE_THREADS) && (!defined(NO_INI_FILE) || !defined(NO_RANDOM_EPID)) && !defined(NO_SOCKETS)
+#define lock_read(x) pthread_rwlock_rdlock(&x)
+#define lock_write(x) pthread_rwlock_wrlock(&x)
+#define unlock_read(x) pthread_rwlock_unlock(&x)
+#define unlock_write(x) pthread_rwlock_unlock(&x)
+#else
+#define lock_read(x) 0
+#define lock_write(x) 0
+#define unlock_read(x)
+#define unlock_write(x)
 #endif
 
 // Semaphores
@@ -92,6 +134,8 @@ typedef struct __packed
 #include <ws2tcpip.h>
 #include <windows.h>
 
+
+typedef char* sockopt_t;
 // Map VLMCSD error codes to WSAGetLastError() codes
 // Add more if you need them
 #define VLMCSD_EADDRINUSE WSAEADDRINUSE
@@ -160,6 +204,7 @@ typedef struct {
 #define VLMCSD_EINPROGRESS EINPROGRESS
 #define VLMCSD_ECONNABORTED ECONNABORTED
 
+typedef void* sockopt_t;
 #define _countof(x)        ( sizeof(x) / sizeof(x[0]) )
 #define SOCKET int
 #define INVALID_SOCKET -1

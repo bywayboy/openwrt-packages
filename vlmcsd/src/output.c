@@ -121,17 +121,20 @@ static const char *LicenseStatusText[] =
 };
 
 
-void Uuid2String(const GUID *const guid, char *const string)
+void Uuid2StringLE(const GUID *const guid, char *const string)
 {
 	sprintf(string,
-				"%08x-%04x-%04x-%02x%02x-%02x%02x%02x%02x%02x%02x",
-				(uint32_t)LE32( guid->Data1 ),
-				(uint32_t)LE16( guid->Data2 ),
-				(uint32_t)LE16( guid->Data3 ),
-				guid->Data4[0], guid->Data4[1],
-				guid->Data4[2], guid->Data4[3],
-				guid->Data4[4], guid->Data4[5],
-				guid->Data4[6], guid->Data4[7] );
+				#ifdef _WIN32
+				"%08x-%04x-%04x-%04x-%012I64x",
+				#else
+				"%08x-%04x-%04x-%04x-%012llx",
+				#endif
+				(unsigned int)LE32( guid->Data1 ),
+				(unsigned int)LE16( guid->Data2 ),
+				(unsigned int)LE16( guid->Data3 ),
+				(unsigned int)BE16( *(uint16_t*)guid->Data4 ),
+				(long long unsigned int)BE64( *(uint64_t*)(guid->Data4 + 2) ) >> 16
+				);
 }
 
 
@@ -140,38 +143,38 @@ void LogRequestVerbose(const REQUEST *const Request, const PRINTFUNC p)
 	char guidBuffer[GUID_STRING_LENGTH + 1];
 	char WorkstationBuffer[3 * WORKSTATION_NAME_BUFFER];
 	const char *productName;
-	int index;
+	ProdListIndex_t index;
 
 	p("Protocol version                : %u.%u\n", LE16(Request->MajorVer), LE16(Request->MinorVer));
 	p("Client is a virtual machine     : %s\n", LE32(Request->IsClientVM) ? "Yes" : "No");
 	p("Current client license status   : %u (%s)\n", (uint32_t)LE32(Request->LicenseStatus), LE32(Request->LicenseStatus) < _countof(LicenseStatusText) ? LicenseStatusText[LE32(Request->LicenseStatus)] : "Unknown");
 	p("Remaining time (0 = forever)    : %i minutes\n", (uint32_t)LE32(Request->GraceTime));
 
-	Uuid2String(&Request->AppId, guidBuffer);
-	productName = GetProductName(Request->AppId, AppList, &index);
+	Uuid2StringLE(&Request->AppId, guidBuffer);
+	productName = GetProductNameLE(&Request->AppId, AppList, &index);
 	p("Application ID                  : %s (%s)\n", guidBuffer, productName);
 
-	Uuid2String(&Request->SkuId, guidBuffer);
+	Uuid2StringLE(&Request->SkuId, guidBuffer);
 
 	#ifndef NO_EXTENDED_PRODUCT_LIST
-	productName = GetProductName(Request->SkuId, ExtendedProductList, &index);
+	productName = GetProductNameLE(&Request->SkuId, ExtendedProductList, &index);
 	#else
 	productName = "Unknown";
 	#endif
 
 	p("Client SKU ID                   : %s (%s)\n", guidBuffer, productName);
 
-	Uuid2String(&Request->KmsId, guidBuffer);
+	Uuid2StringLE(&Request->KmsId, guidBuffer);
 
 	#ifndef NO_BASIC_PRODUCT_LIST
-	productName = GetProductName(Request->KmsId, ProductList, &index);
+	productName = GetProductNameLE(&Request->KmsId, ProductList, &index);
 	#else
 	productName = "Unknown";
 	#endif
 
 	p("Server SKU ID                   : %s (%s)\n", guidBuffer, productName);
 
-	Uuid2String(&Request->ClientMachineId, guidBuffer);
+	Uuid2StringLE(&Request->ClientMachineId, guidBuffer);
 	p("Client machine ID               : %s\n", guidBuffer);
 
 	char mbstr[64];
@@ -197,7 +200,7 @@ void LogResponseVerbose(const char *const ePID, const BYTE *const hwid, const RE
 	if (LE16(response->MajorVer) > 5)
 		p("KMS host Hardware ID            : %02X%02X%02X%02X%02X%02X%02X%02X\n", hwid[0], hwid[1], hwid[2], hwid[3], hwid[4], hwid[5], hwid[6], hwid[7]);
 
-	Uuid2String(&response->ClientMachineId, guidBuffer);
+	Uuid2StringLE(&response->ClientMachineId, guidBuffer);
 	p("Client machine ID               : %s\n", guidBuffer);
 
 	char mbstr[64];
