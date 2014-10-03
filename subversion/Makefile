@@ -26,7 +26,7 @@ define Package/subversion/Default
   SECTION:=net
   CATEGORY:=Network
   TITLE:=A compelling replacement for CVS
-  DEPENDS:=+zlib  +libaprutil +libsasl2 +libmagic +libsqlite3
+  DEPENDS:=+zlib  +libaprutil +libsasl2 +libmagic +libsqlite3 +libopenssl
   URL:=http://subversion.apache.org/
   SUBMENU:=Version Control Systems
 endef
@@ -117,6 +117,15 @@ endef
 define Package/subversion-server/install
 	$(INSTALL_DIR) $(1)/usr/bin
 	$(INSTALL_BIN) $(PKG_INSTALL_DIR)/usr/bin/svn{look,admin,dumpfilter,serve} $(1)/usr/bin/
+
+	$(INSTALL_DIR) $(1)/etc/config
+	$(CP) ./files/etc/config/subversion $(1)/etc/config/subversion
+
+	$(INSTALL_DIR) $(1)/etc/init.d
+	$(INSTALL_BIN) ./files/etc/init.d/subversion $(1)/etc/init.d/subversion
+
+	$(INSTALL_DIR) $(1)/etc/rc.d
+	ln -s ../init.d/subversion $(1)/etc/rc.d/S92subversion
 endef
 
 
