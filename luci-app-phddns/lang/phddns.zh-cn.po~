@@ -1,0 +1,30 @@
+msgid "Oray DDNS"
+msgstr "花生壳动态域名"
+
+msgid "This page allows you to set Oray DDNS."
+msgstr "这个页面允许您设置花生壳动态域名配置信息."
+
+
+
+msgid "Subversion"
+msgstr "SVN版本仓库"
+
+msgid "Subversion Server"
+msgstr "SVN服务器"
+
+msgid "This page allows you to set Subversion Server."
+msgstr "这个页面允许您设置SVN服务器配置信息."
+
+msgid "Svn Root"
+msgstr "仓库根路径:"
+
+msgid "Listen Address"
+msgstr "监听地址:"
+
+msgid "Listen Port"
+msgstr "监听端口:"
+
+msgid "Cache Size"
+msgstr "缓存尺寸:"
+
+
