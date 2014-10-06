@@ -1,0 +1,200 @@
+diff -uNr a/src/log.c b/src/log.c
+--- a/src/log.c	2011-08-25 12:53:21.000000000 +0800
++++ b/src/log.c	2014-10-06 17:44:38.886948237 +0800
+@@ -36,25 +36,12 @@
+ void log_open(const char *file, int level)
+ {
+ 	logLevel = level;
+-
+-	if (logFile)
+-		log_close();
+-
+-	if (file && *file)
+-		logFile = fopen(file, "a+");
+-	if (!logFile) 
+-	{
+-		logFile = stderr;
+-		if (file && *file)
+-			LOG(1) ("Error open log file: %s\n", file);
+-	}
+-	//for test only!!!
+-	//logFile = stderr;
++	logFile = stdout;
+ }
+ 
+ void log_close()
+ {
+-	if (logFile && logFile != stderr) {
++	if (logFile && logFile != stdout) {
+ 		fclose(logFile);
+ 		logFile = NULL;
+ 	}
+diff -uNr a/src/main.c b/src/main.c
+--- a/src/main.c	2011-08-25 12:47:47.000000000 +0800
++++ b/src/main.c	2014-10-06 21:04:51.377178276 +0800
+@@ -9,18 +9,17 @@
+ #include <netdb.h>
+ #include <unistd.h>     /* for close() */
+ 
+-static void create_pidfile()
++static void create_pidfile(PHGlobal * gl)
+ {
+     FILE *pidfile;
+-    char pidfilename[128];
+-    sprintf(pidfilename, "%s", "/var/run/phddns.pid");
++    sprintf(gl->pidfilename, "%s", "/var/run/phddns.pid");
+ 	
+-    if ((pidfile = fopen(pidfilename, "w")) != NULL) {
++    if ((pidfile = fopen(gl->pidfilename, "w")) != NULL) {
+ 		fprintf(pidfile, "%d\n", getpid());
+ 		(void) fclose(pidfile);
+     } else {
+-		printf("Failed to create pid file %s: %m", pidfilename);
+-		pidfilename[0] = 0;
++		printf("Failed to create pid file %s: %m", gl->pidfilename);
++		gl->pidfilename[0] = 0;
+     }
+ }
+ #endif
+@@ -117,13 +116,15 @@
+ 	}
+ 
+ 	log_open( parameter.logfile, 1);	//empty file will cause we printf to stdout
+-	//create_pidfile();
+ 
+ 	global.cbOnStatusChanged = myOnStatusChanged;
+ 	global.cbOnDomainRegistered = myOnDomainRegistered;
+ 	global.cbOnUserInfo = myOnUserInfo;
+ 	global.cbOnAccountDomainInfo = myOnAccountDomainInfo;
+ 
++#ifndef WIN32
++	create_pidfile(&global);
++#endif
+ 	set_default_callback(&global);
+ 	//◊¢“‚£°£°£°£°£°£°£°£°£°£°£°£°£°£°£°£°£°£°£°£°£°£°£°£°
+ 	//“‘œ¬¡Ω∏ˆ÷µ”√ªßƒ˙¡Ÿ ±≤‚ ‘£®Orayø…ƒ‹ÀÊ ±…æ≥˝ªÚ–ﬁ∏ƒ£©£¨’˝ Ω∑¢≤º«∞«ÎÃÓ–¥ƒ˙µƒ µº ∑÷≈‰÷µ
+diff -uNr a/src/phglobal.c b/src/phglobal.c
+--- a/src/phglobal.c	2011-08-23 16:24:12.000000000 +0800
++++ b/src/phglobal.c	2014-10-06 20:51:11.271362463 +0800
+@@ -12,9 +12,37 @@
+ 
+ #include <time.h>
+ 
++static char buf[64] = "";
++static PHGlobal * m_global = NULL;
++
++static void write_status_file(char * status)
++{
++	FILE * fp = fopen("/var/phddns.stat","wb+");
++	int i=0;
++	if(NULL != fp)
++	{
++		fprintf(fp,"{ \"status\": \"%s\"", status);
++		if(m_global->szActiveDomains[0][0] != '.')
++		{
++			fprintf(fp,"{ \"domain\": \"");
++			while(1)
++			{
++				fprintf(fp,"%s%s" , 
++						m_global->szActiveDomains[i],
++						m_global->szActiveDomains[i+1][0] != '.'?",":"\""
++				);
++				i++;
++				if(m_global->szActiveDomains[i][0] == '.')
++					break;
++			}
++		}
++		fprintf(fp, " }");
++		fclose(fp);
++	}
++}
+ const char *convert_status_code(int nCode)
+ {
+-	static char buf[64] = "";
++	
+ 
+ 	switch (nCode)
+ 	{
+@@ -99,7 +127,8 @@
+ 
+ static void defOnStatusChanged(int status, int data)
+ {
+-	printf("defOnStatusChanged %s", convert_status_code(status));
++	char * status_str = convert_status_code(status);
++	printf("defOnStatusChanged %s", status_str);
+ 	if (status == okKeepAliveRecved)
+ 	{
+ 		printf(", IP: %d", data);
+@@ -108,6 +137,8 @@
+ 	{
+ 		printf(", UserType: %d", data);
+ 	}
++
++	write_status_file(status_str);
+ 	printf("\n");
+ }
+ 
+@@ -128,12 +159,17 @@
+ 
+ void init_global(PHGlobal *global)
+ {
++	m_global = global;
++
++	
+ 	strcpy(global->szHost,"phddns60.oray.net");
+ 	strcpy(global->szUserID,"");
+ 	strcpy(global->szUserPWD,"");
+ 	strcpy(global->szBindAddress,"");
++
+ 	global->nUserType = 0;
+ 	global->nPort = 6060;
++	global->pidfilename[0]='\0';
+ 
+ 	global->bTcpUpdateSuccessed = FALSE;
+ 	strcpy(global->szChallenge,"");
+@@ -161,6 +197,14 @@
+ 	global->cbOnAccountDomainInfo = NULL;
+ }
+ 
++void free_global(PHGlobal *global)
++{
++	puts("free global ......");
++	if('\0' != global->pidfilename[0])
++		unlink(global->pidfilename);
++	unlink("/tmp/phddns.stat");
++}
++
+ void set_default_callback(PHGlobal *global)
+ {
+ 	global->cbOnStatusChanged = defOnStatusChanged;
+diff -uNr a/src/phglobal.h b/src/phglobal.h
+--- a/src/phglobal.h	2011-08-23 16:24:12.000000000 +0800
++++ b/src/phglobal.h	2014-10-06 20:39:08.546208855 +0800
+@@ -185,7 +185,7 @@
+ 	int tmLastResponse;
+ 	int nAddressIndex;
+ 	char szTcpConnectAddress[32];
+-
++	char pidfilename[128];
+ 	int cLastResult;
+ 	int ip;
+ 
+@@ -209,5 +209,5 @@
+ 
+ void init_global(PHGlobal *global);
+ void set_default_callback(PHGlobal *global);
+-
+-#endif
+\ Êñá‰ª∂Â∞æÊ≤°Êúâ newline Â≠óÁ¨¶
++void free_global(PHGlobal *global);
++#endif
+diff -uNr a/src/phupdate.c b/src/phupdate.c
+--- a/src/phupdate.c	2011-08-23 16:24:12.000000000 +0800
++++ b/src/phupdate.c	2014-10-06 19:42:24.721280567 +0800
+@@ -499,4 +499,6 @@
+ 	phglobal->tmLastSend = time(0);
+ 	sleep(1); //ensure data sent
+ 	DestroySockets(phglobal);
++	
++	free_global(phglobal);
+ }
