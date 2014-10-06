@@ -185,7 +185,7 @@ diff -uNr a/src/phglobal.h b/src/phglobal.h
  void set_default_callback(PHGlobal *global);
 -
 -#endif
-\ 文件尾没有 newline 字符
+\ 文件尾没�?newline 字符
 +void free_global(PHGlobal *global);
 +#endif
 diff -uNr a/src/phupdate.c b/src/phupdate.c
