@@ -29,3 +29,32 @@ msgstr "缓存尺寸:"
 
 msgid "KMS Server"
 msgstr "KMS 服务器"
+
+msgid "okConnecting"
+msgstr "正在连接..."
+
+msgid "okConnected"
+msgstr "连接成功"
+
+msgid "okAuthpassed"
+msgstr "认证通过"
+
+msgid "okDomainListed"
+msgstr "域名列表已获取"
+
+msgid "okDomainsRegistered"
+msgstr "域名已经注册"
+
+msgid "okKeepAliveRecved"
+msgstr "保持连接"
+
+msgid "errorConnectFailed"
+msgstr "错误:连接失败"
+
+msgid "errorSocketInitialFailed"
+msgstr "错误:socket初始化失败"
+
+msgid "errorAuthFailed"
+msgstr "错误:认证失败"
+
+
