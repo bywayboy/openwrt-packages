@@ -5,24 +5,24 @@ local cur = uci.cursor();
 local http = require "luci.http";
 local _ = luci.i18n.translate
 
-m = Map("phddns", "Oray DDNS.",
+m = Map("phddns", _("Oray DDNS"),
 		_("This page allows you to set Oray DDNS."))
 
 m.on_after_commit = function(self)
 	luci.sys.call("/etc/init.d/phddns restart >/dev/null") 
 end
 
-s = m:section(TypedSection, "phddns", translate("Oray Account"))
+s = m:section(TypedSection, "phddns", _("Oray account"))
 s.anonymous = true
 s.addremove = false
 
-o = s:option(Flag , "enabled", translate("Enable"))
+o = s:option(Flag , "enabled", _("Enable"))
 
-o = s:option(Value, "username", translate("Username"))
+o = s:option(Value, "username", _("Username"))
 o.datatype="string"
 o:depends("enabled", "1")
 
-o = s:option(Value, "password", translate("Password"))
+o = s:option(Value, "password", _("Password"))
 o.datatype="string"
 o:depends("enabled", "1")
 

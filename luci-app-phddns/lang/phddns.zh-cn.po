@@ -1,10 +1,11 @@
 msgid "Oray DDNS"
 msgstr "花生壳动态域名"
 
+msgid "Oray account"
+msgstr "花生壳账户配置"
+
 msgid "This page allows you to set Oray DDNS."
 msgstr "这个页面允许您设置花生壳动态域名配置信息."
-
-
 
 msgid "Subversion"
 msgstr "SVN版本仓库"
