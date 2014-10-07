@@ -48,8 +48,9 @@ stop()
 {
 	if [ -f "$PID_FILE" ]; then
 	    local PID=`cat $PID_FILE`
-		kill -s 2 $PID
-		echo kill -s 2 $PID
+		kill -s 15 $PID
+		rm -f "$PID_FILE" "$CFG_FILE" "/tmp/phddns.stat"
+		sleep 1s
 	fi
 }
 
