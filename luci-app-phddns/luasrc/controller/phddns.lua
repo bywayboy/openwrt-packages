@@ -34,7 +34,7 @@ function action_phddns_status()
 	luci.http.prepare_content("application/json")
 	if nixio.fs.access(file) then
 		local str = nixio.fs.readfile(file)
-		stat, domains = str:match("([^|]+)|([^|]+)")
+		stat, domain = str:match("([^|]+)|([^|]+)")
 	end
 	local arr = { ["stat"]=stat,["domain"]=domain }
 	luci.http.write_json(arr);	
