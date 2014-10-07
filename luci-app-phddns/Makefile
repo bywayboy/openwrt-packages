@@ -48,8 +48,9 @@ define Package/luci-app-phddns/install
 
 	$(INSTALL_DIR) $(1)/usr/lib/lua/luci/model/cbi/admin_services
 	$(CP) $(PKG_BUILD_DIR)/luasrc/model/cbi/admin_services/* $(1)/usr/lib/lua/luci/model/cbi/admin_services	
-#	$(INSTALL_DIR) $(1)/usr/lib/lua/luci/view/admin_system
-#	$(CP) $(PKG_BUILD_DIR)/luasrc/view/admin_system/* $(1)/usr/lib/lua/luci/view/admin_system
+
+	$(INSTALL_DIR) $(1)/usr/lib/lua/luci/model/cbi/admin_services
+	$(CP) $(PKG_BUILD_DIR)/luasrc/model/cbi/admin_services/* $(1)/usr/lib/lua/luci/model/cbi/admin_services
 	
 	$(INSTALL_DIR) $(1)/usr/lib/lua/luci/i18n
 	$(PO2LMO) ./lang/phddns.zh-cn.po $(1)/usr/lib/lua/luci/i18n/phddns.zh-cn.lmo
