@@ -75,8 +75,8 @@ diff -uNr a/src/main.c b/src/main.c
  	//ÒÔÏÂÁ½¸öÖµÓÃ»§ÄúÁÙÊ±²âÊÔ£¨Oray¿ÉÄÜËæÊ±É¾³ı»òĞŞ¸Ä£©£¬ÕıÊ½·¢²¼Ç°ÇëÌîĞ´ÄúµÄÊµ¼Ê·ÖÅäÖµ
 diff -uNr a/src/phglobal.c b/src/phglobal.c
 --- a/src/phglobal.c	2011-08-23 16:24:12.000000000 +0800
-+++ b/src/phglobal.c	2014-10-06 21:11:28.255502691 +0800
-@@ -12,9 +12,37 @@
++++ b/src/phglobal.c	2014-10-07 19:58:49.921816665 +0800
+@@ -12,9 +12,36 @@
  
  #include <time.h>
  
@@ -89,22 +89,21 @@ diff -uNr a/src/phglobal.c b/src/phglobal.c
 +	int i=0;
 +	if(NULL != fp)
 +	{
-+		fprintf(fp,"{ \"status\": \"%s\"", status);
++		fprintf(fp,"%s", status);
 +		if(m_global->szActiveDomains[0][0] != '.')
 +		{
-+			fprintf(fp," \"domain\": \"");
++			fprintf(fp,"|");
 +			while(1)
 +			{
 +				fprintf(fp,"%s%s" , 
 +						m_global->szActiveDomains[i],
-+						m_global->szActiveDomains[i+1][0] != '.'?",":"\""
++						m_global->szActiveDomains[i+1][0] != '.'?",":""
 +				);
 +				i++;
 +				if(m_global->szActiveDomains[i][0] == '.')
 +					break;
 +			}
 +		}
-+		fprintf(fp, " }");
 +		fclose(fp);
 +	}
 +}
@@ -115,7 +114,7 @@ diff -uNr a/src/phglobal.c b/src/phglobal.c
  
  	switch (nCode)
  	{
-@@ -99,7 +127,8 @@
+@@ -99,7 +126,8 @@
  
  static void defOnStatusChanged(int status, int data)
  {
@@ -125,7 +124,7 @@ diff -uNr a/src/phglobal.c b/src/phglobal.c
  	if (status == okKeepAliveRecved)
  	{
  		printf(", IP: %d", data);
-@@ -108,6 +137,8 @@
+@@ -108,6 +136,8 @@
  	{
  		printf(", UserType: %d", data);
  	}
@@ -134,7 +133,7 @@ diff -uNr a/src/phglobal.c b/src/phglobal.c
  	printf("\n");
  }
  
-@@ -128,12 +159,17 @@
+@@ -128,12 +158,17 @@
  
  void init_global(PHGlobal *global)
  {
@@ -152,7 +151,7 @@ diff -uNr a/src/phglobal.c b/src/phglobal.c
  
  	global->bTcpUpdateSuccessed = FALSE;
  	strcpy(global->szChallenge,"");
-@@ -161,6 +197,14 @@
+@@ -161,6 +196,14 @@
  	global->cbOnAccountDomainInfo = NULL;
  }
  
@@ -185,7 +184,7 @@ diff -uNr a/src/phglobal.h b/src/phglobal.h
  void set_default_callback(PHGlobal *global);
 -
 -#endif
-\ æ–‡ä»¶å°¾æ²¡æœ?newline å­—ç¬¦
+\ æ–‡ä»¶å°¾æ²¡æœ‰ newline å­—ç¬¦
 +void free_global(PHGlobal *global);
 +#endif
 diff -uNr a/src/phupdate.c b/src/phupdate.c

@@ -26,4 +26,7 @@ o = s:option(Value, "password", translate("Password"))
 o.datatype="string"
 o:depends("enabled", "1")
 
+o = s:option(Value, "stat", "")
+o.template="admin_services/phddns_stat"
+
 return m

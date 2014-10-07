@@ -17,8 +17,25 @@ function index()
 		
 		page = entry({"admin", "services", "subversion"},cbi("admin_services/subversion"), _("Subversion"))
 		page.dependent = true
+		
+		entry({"admin", "services", "phddns_status"}, call("action_phddns_status"))
 
 		page = entry({"admin", "services", "vlmcsd"},cbi("admin_services/vlmcsd"), _("KMS Server"))
 		page.dependent = true
 	end
+end
+
+
+function action_phddns_status()
+	local file="/tmp/phddns.stat"
+	local _ = luci.i18n.translate
+	local stat="Not Running"
+	local domain = ""
+	luci.http.prepare_content("application/json")
+	if nixio.fs.access(file) then
+		local str = nixio.fs.readfile(file)
+		stat, domains = str:match("([^|]+)|([^|]+)")
+	end
+	local arr = { ["stat"]=stat,["domain"]=domain }
+	luci.http.write_json(arr);	
 end

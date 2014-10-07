@@ -57,4 +57,12 @@ msgstr "错误:socket初始化失败"
 msgid "errorAuthFailed"
 msgstr "错误:认证失败"
 
+msgid "Running status"
+msgstr "运行状态"
+
+msgid "Link status"
+msgstr "连接状态"
+
+msgid "Registered Domains"
+msgstr "注册域名"
 

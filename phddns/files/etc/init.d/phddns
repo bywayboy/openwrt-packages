@@ -35,11 +35,10 @@ nicName = $ifname
 szLog = /var/log/phddns.log
 EOF
 		if [ -f "$PID_FILE" ]; then
-			local PID=`cat $PID_FILE`
-			kill -2 $PID
-			rm -rf $PID_FILE
+			echo "phddns is running"
+		else
+			$BIN_FILE -d -c $CFG_FILE
 		fi
-		$BIN_FILE -d -c $CFG_FILE
 	else
 		echo "phddns is disabled."
 	fi
@@ -49,8 +48,8 @@ stop()
 {
 	if [ -f "$PID_FILE" ]; then
 	    local PID=`cat $PID_FILE`
-		kill -2 $PID
-		rm -rf $PID_FILE
+		kill -s 2 $PID
+		echo kill -s 2 $PID
 	fi
 }
 

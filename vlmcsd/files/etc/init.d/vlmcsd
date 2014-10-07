@@ -13,6 +13,7 @@ INIFILE="/etc/vlmcsd.ini"
 CONFIGFILE=""
 LISTENPORT=1688
 ENABLED='1'
+USEEPIDFILE='0'
 
 config_load "vlmcsd"
 
@@ -20,6 +21,7 @@ parse_vlmcsd()
 {
 	config_get LISTENPORT "$section" "port"
 	config_get ENABLED "$section" "enabled"
+	config_get USEEPIDFILE "$section" "useepifile"
 }
 config_foreach parse_vlmcsd 'vlmcsd'
 
@@ -27,7 +29,11 @@ start ()
 {
 	if [ "1" = "$ENABLED" ] || [ "on" = "$ENABLED" ] || [ "true" = "$ENABLED" ]; then
 		if [ ! -f $PIDFILE ]; then 
-			$EXECUTEBIN -i $INIFILE -p $PIDFILE -P $LISTENPORT -l syslog
+			if [ "1" = "$USEEPIDFILE" ] || [ "on" = "$USEEPIDFILE" ] || [ "true" = "$USEEPIDFILE" ]; then
+				$EXECUTEBIN -d -i $INIFILE -p $PIDFILE -P $LISTENPORT -l syslog
+			else
+				$EXECUTEBIN -d -p $PIDFILE -P $LISTENPORT -l syslog
+			fi
 		else
 			PID=`cat $PIDFILE`
 			kill -s 0 $PID
