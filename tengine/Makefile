@@ -109,6 +109,9 @@ define Package/$(PKG_NAME)/install
 	
 	$(INSTALL_DIR) $(1)/etc/init.d
 	$(INSTALL_BIN) ./files/nginx.init $(1)/etc/init.d/nginx
+	
+	$(INSTALL_DIR) $(1)/etc/rc.d
+	ln -s ../init.d/nginx $(1)/etc/rc.d/S50nginx
 endef
 
 $(eval $(call BuildPackage,$(PKG_NAME)))
