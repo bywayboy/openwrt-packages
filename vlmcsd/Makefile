@@ -1,7 +1,7 @@
 include $(TOPDIR)/rules.mk
 
 PKG_NAME:=vlmcsd
-PKG_VERSION:=svn527
+PKG_VERSION:=svn531
 PKG_RELEASE:=1
 PKG_REV:=1
 

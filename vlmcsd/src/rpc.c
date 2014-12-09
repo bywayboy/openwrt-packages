@@ -571,7 +571,7 @@ int RpcSendRequest(const SOCKET sock, const BYTE *const KmsRequest, const size_t
 			}
 		}
 
-		pReturnCode = (DWORD*)(*KmsResponse + *responseSize);
+		pReturnCode = (DWORD*)(*KmsResponse + *responseSize + pad);
 		status = LE32(UA32(pReturnCode));
 
 		if (status) errorout("\nWarning: RPC stub data reported Error %u\n", (uint32_t)status);
