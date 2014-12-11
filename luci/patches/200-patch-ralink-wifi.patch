@@ -6,7 +6,7 @@ diff -uNr a/modules/admin-full/luasrc/controller/admin/network.lua b/modules/adm
  		local net = dev:add_wifinet({
  			mode       = "ap",
 -			ssid       = "OpenWrt",
-+			ssid       = "R100H",
++			ssid       = "YOS",
  			encryption = "none"
  		})
  

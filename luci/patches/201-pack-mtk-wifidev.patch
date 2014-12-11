@@ -24,84 +24,6 @@ diff -uNr a/libs/core/luasrc/model/network.lua ./b/libs/core/luasrc/model/networ
  
  	self.netid  = netid
  	self.wdev   = dev
-diff -uNr a/modules/admin-full/luasrc/controller/admin/network.lua ./b/modules/admin-full/luasrc/controller/admin/network.lua
---- a/modules/admin-full/luasrc/controller/admin/network.lua
-+++ b/modules/admin-full/luasrc/controller/admin/network.lua
-@@ -224,6 +224,57 @@
- 	end
- end
- 
-+string.explode = function(s, p)
-+    local rt= {}
-+    string.gsub(s, '[^'..p..']+', function(w) table.insert(rt, w) end )
-+    return rt
-+end
-+
-+function ralink_wifi_delete()
-+	local uci = require("luci.model.uci").cursor()
-+
-+	uci:foreach("wireless","wifi-iface",
-+		function(section)
-+			local mode = section["mode"]
-+			local network = section["network"]
-+
-+			if "sta" == mode then
-+				local name = section[".name"]
-+				local nuci = require("luci.model.uci").cursor()
-+				uci:delete("wireless",name)
-+				uci:commit("wireless")
-+				
-+				nuci:foreach("network","interface",
-+					function(s)
-+						if (s['.name'] == network) then
-+							local remove_interface = true
-+							if s['type'] == 'bridge' then
-+								local arr = string.explode(s['ifname'],' ')
-+								
-+								if #arr > 1 then
-+									for idx,val in pairs(arr) do
-+										if val == 'apcli0' or val == 'ra0' then
-+											table.remove(arr, idx)
-+										end
-+									end
-+									nuci:set('network',s['.name'],'ifname',table.concat(arr,' '))
-+									remove_interface = false
-+								end
-+							end
-+							if remove_interface then
-+								nuci:delete('network', s['.name'])
-+							end
-+							nuci:commit('network')
-+						end
-+					end
-+				)
-+				return false
-+			end
-+			return true
-+		end
-+	)
-+end
-+
- function wifi_delete(network)
- 	local ntm = require "luci.model.network".init()
- 	local wnet = ntm:get_wifinet(network)
-@@ -243,6 +294,8 @@
- 			end
- 			luci.sys.call("env -i /sbin/wifi up %q >/dev/null" % dev:name())
- 		end
-+	else
-+		ralink_wifi_delete()
- 	end
- 
- 	luci.http.redirect(luci.dispatcher.build_url("admin/network/wireless"))
-@@ -375,6 +428,7 @@
- 	local dev
- 	for dev in devs:gmatch("[%w%.%-]+") do
- 		rv[#rv+1] = s.wifi_network(dev)
-+		if false == rv[#rv]["up"] then rv[#rv]["bssid"]="00:00:00:00:00:00" end
- 	end
- 
- 	if #rv > 0 then
 diff -uNr a/modules/admin-full/luasrc/view/admin_network/wifi_overview.htm ./b/modules/admin-full/luasrc/view/admin_network/wifi_overview.htm
 --- a/modules/admin-full/luasrc/view/admin_network/wifi_overview.htm
 +++ b/modules/admin-full/luasrc/view/admin_network/wifi_overview.htm
@@ -118,3 +40,12 @@ diff -uNr a/modules/admin-full/luasrc/view/admin_network/wifi_overview.htm ./b/m
  			if (st)
  			{
  				var assoctable = document.getElementById('iw-assoclist');
+@@ -395,7 +401,7 @@
+ 					<td class="cbi-value-field" style="width:310px;text-align:right">
+ 						<input id="<%=net:id()%>-iw-toggle" type="button" class="cbi-button cbi-button-reload" style="width:100px" onclick="wifi_shutdown('<%=net:id()%>', this)" title="<%:Delete this network%>" value="<%:Enable%>" />
+ 						<input type="button" class="cbi-button cbi-button-edit" style="width:100px" onclick="location.href='<%=net:adminlink()%>'" title="<%:Edit this network%>" value="<%:Edit%>" />
+-						<input type="button" class="cbi-button cbi-button-remove" style="width:100px" onclick="if (confirm('<%:Really delete this wireless network? The deletion cannot be undone!\nYou might lose access to this device if you are connected via this network.%>')) location.href='<%=luci.dispatcher.build_url("admin/network/wireless_delete", net:ifname())%>'" title="<%:Delete this network%>" value="<%:Remove%>" />
++						<input type="button" class="cbi-button cbi-button-remove" style="width:100px" onclick="if (confirm('<%:Really delete this wireless network? The deletion cannot be undone!\nYou might lose access to this device if you are connected via this network.%>')) location.href='<%=luci.dispatcher.build_url("admin/network/wireless_delete", net:id())%>'" title="<%:Delete this network%>" value="<%:Remove%>" />
+ 					</td>
+ 				</tr>
+ 				<% end %>
