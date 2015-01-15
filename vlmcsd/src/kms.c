@@ -1,4 +1,3 @@
-#include <stdlib.h>
 #include <stdio.h>
 #include <string.h>
 #include <stdint.h>
@@ -7,29 +6,33 @@
 #if !defined(_WIN32)
 #include <sys/socket.h>
 #endif
+
 #include "output.h"
 #include "crypto.h"
 #include "endian.h"
+#include "kms.h"
+#include "shared_globals.h"
+#include "helpers.h"
 
 #define FRIENDLY_NAME_WINDOWS "Windows"
 #define FRIENDLY_NAME_OFFICE2010 "Office2010"
 #define FRIENDLY_NAME_OFFICE2013 "Office2013"
 
-#ifndef EPID_WINDOWS
-#define EPID_WINDOWS "06401-00206-271-295042-03-1033-9600.0000-2542014"
+/*#ifndef EPID_WINDOWS
+#define EPID_WINDOWS "06401-00206-271-392041-03-1033-9600.0000-3622014"
 #endif
 
 #ifndef EPID_OFFICE2010
-#define EPID_OFFICE2010 "05426-00096-199-299483-03-1033-9600.0000-2542014"
+#define EPID_OFFICE2010 "05426-00096-199-496023-03-1033-9600.0000-3622014"
 #endif
 
 #ifndef EPID_OFFICE2013
-#define EPID_OFFICE2013 "55041-00206-234-398302-03-1033-9600.0000-2542014"
+#define EPID_OFFICE2013 "55041-00206-234-409313-03-1033-9600.0000-3622014"
 #endif
 
 #ifndef HWID
 #define HWID 0x36, 0x4F, 0x46, 0x3A, 0x88, 0x63, 0xD3, 0x5F
-#endif
+#endif*/
 
 #ifndef NO_BASIC_PRODUCT_LIST
 // Do not change the order of this list. Append items as necessary
@@ -173,12 +176,12 @@ const KmsIdList ExtendedProductList [] = {
 
 
 // necessary because other .c files cannot access _countof()
-__pure ProdListIndex_t GetExtendedProductListSize(void)
+__pure ProdListIndex_t getExtendedProductListSize(void)
 {
 	return _countof(ExtendedProductList) - 1;
 }
 
-__pure ProdListIndex_t GetAppListSize(void)
+__pure ProdListIndex_t getAppListSize(void)
 {
 	return _countof(AppList);
 }
@@ -234,7 +237,7 @@ uint16_t IsValidLcid(const uint16_t Lcid)
 
 // Unix time is seconds from 1970-01-01. Should be 64 bits to avoid Year 2035 overflow bug.
 // FILETIME is 100 nanoseconds from 1601-01-01. Must be 64 bits.
-void GetUnixTimeAsFileTime(FILETIME *const ts)
+void getUnixTimeAsFileTime(FILETIME *const ts)
 {
 	int64_t unixtime = (int64_t)time(NULL);
 	int64_t *filetime = (int64_t*)ts;
@@ -242,13 +245,13 @@ void GetUnixTimeAsFileTime(FILETIME *const ts)
 	*filetime = LE64( (unixtime + 11644473600LL) * 10000000LL );
 }
 
-__pure int64_t FileTimeToUnixTime(const FILETIME *const ts)
+__pure int64_t fileTimeToUnixTime(const FILETIME *const ts)
 {
 	return LE64( *((const int64_t *const)ts) ) / 10000000LL - 11644473600LL;
 }
 
 
-const char* GetProductNameHE(const GUID *const guid, const KmsIdList *const List, ProdListIndex_t *const i)
+const char* getProductNameHE(const GUID *const guid, const KmsIdList *const List, ProdListIndex_t *const i)
 {
 	for (*i = 0; List[*i].name != NULL; (*i)++)
 	{
@@ -261,14 +264,14 @@ const char* GetProductNameHE(const GUID *const guid, const KmsIdList *const List
 }
 
 
-const char* GetProductNameLE(const GUID *const guid, const KmsIdList *const List, ProdListIndex_t *const i)
+const char* getProductNameLE(const GUID *const guid, const KmsIdList *const List, ProdListIndex_t *const i)
 {
 	#if __BYTE_ORDER != __LITTLE_ENDIAN
 	GUID HeGUID;
 	LEGUID(&HeGUID, guid);
-	return GetProductNameHE(&HeGUID, List, i);
+	return getProductNameHE(&HeGUID, List, i);
 	#else
-	return GetProductNameHE(guid, List, i);
+	return getProductNameHE(guid, List, i);
 	#endif
 }
 
@@ -294,7 +297,7 @@ static char* itoc(char *const c, const int i, uint_fast8_t digits)
 }
 
 
-static void GenerateRandomPid(const int index, char *const szPid, int serverType, int16_t lang)
+static void generateRandomPid(const int index, char *const szPid, int serverType, int16_t lang)
 {
 	if (serverType < 0 || serverType >= (int)_countof(HostOS))
 		serverType = rand() % (int)_countof(HostOS);
@@ -340,7 +343,7 @@ static void GenerateRandomPid(const int index, char *const szPid, int serverType
 	strcat(szPid, itoc(numberBuffer, pidTime->tm_year + 1900, 4));
 }
 
-void RandomPidInit()
+void randomPidInit()
 {
 	ProdListIndex_t i;
 
@@ -353,11 +356,8 @@ void RandomPidInit()
 
 		char Epid[PID_BUFFER_SIZE];
 
-		GenerateRandomPid(i, Epid, serverType, lang);
+		generateRandomPid(i, Epid, serverType, lang);
 		KmsResponseParameters[i].Epid = (const char*)malloc(strlen(Epid) + 1);
-
-		if (KmsResponseParameters[i].Epid)
-			KmsResponseParameters[i].EpidFromMalloc = TRUE;
 
 		strcpy((char*)KmsResponseParameters[i].Epid, Epid);
 
@@ -370,7 +370,7 @@ void RandomPidInit()
 #endif // NO_RANDOM_EPID
 
 
-void Hex2bin(BYTE *const bin, const char *hex, const size_t maxbin)
+void hex2bin(BYTE *const bin, const char *hex, const size_t maxbin)
 {
 	static const char *const hexdigits = "0123456789ABCDEF";
 	char* nextchar;
@@ -391,23 +391,23 @@ void Hex2bin(BYTE *const bin, const char *hex, const size_t maxbin)
 
 
 #ifndef NO_LOG
-static void LogRequest(const REQUEST *const Request)
+static void logRequest(const REQUEST *const Request)
 {
 	const char *productName;
 	char clientname[64];
 	ProdListIndex_t index;
 
 	#ifndef NO_EXTENDED_PRODUCT_LIST
-	productName = GetProductNameLE(&Request->SkuId, ExtendedProductList, &index);
+	productName = getProductNameLE(&Request->SkuId, ExtendedProductList, &index);
 	if (++index >= (int)_countof(ExtendedProductList))
 	#endif // NO_EXTENDED_PRODUCT_LIST
 	{
 		#ifndef NO_BASIC_PRODUCT_LIST
-		productName = GetProductNameLE(&Request->KmsId, ProductList, &index);
+		productName = getProductNameLE(&Request->KmsId, ProductList, &index);
 		if (++index >= (int)_countof(ProductList))
 		#endif // NO_BASIC_PRODUCT_LIST
 		{
-			productName = GetProductNameLE(&Request->AppId, AppList, &index);
+			productName = getProductNameLE(&Request->AppId, AppList, &index);
 		}
 	}
 
@@ -415,7 +415,7 @@ static void LogRequest(const REQUEST *const Request)
 	if (logverbose)
 	{
 		logger("<<< Incoming KMS request\n");
-		LogRequestVerbose(Request, &logger);
+		logRequestVerbose(Request, &logger);
 	}
 	else
 	{
@@ -429,14 +429,14 @@ static void LogRequest(const REQUEST *const Request)
 #endif // NO_LOG
 
 
-static void GetEpidFromString(RESPONSE *const Response, const char *const pid)
+static void getEpidFromString(RESPONSE *const Response, const char *const pid)
 {
 	size_t length = utf8_to_ucs2(Response->KmsPID, pid, PID_BUFFER_SIZE, PID_BUFFER_SIZE * 3);
 	Response->KmsPIDLen = LE32(((unsigned int )length + 1) << 1);
 }
 
 
-static void GetEpid(const REQUEST *const Request, RESPONSE *const Response, const char** EpidSource, const ProdListIndex_t index, BYTE *const HwId)
+static void getEpid(const REQUEST *const Request, RESPONSE *const Response, const char** EpidSource, const ProdListIndex_t index, BYTE *const HwId)
 {
 	const char* pid;
 	if (KmsResponseParameters[index].Epid == NULL)
@@ -445,7 +445,7 @@ static void GetEpid(const REQUEST *const Request, RESPONSE *const Response, cons
 		if (RandomizationLevel == 2)
 		{
 			char szPid[PID_BUFFER_SIZE];
-			GenerateRandomPid(index, szPid, -1, Lcid ? Lcid : -1);
+			generateRandomPid(index, szPid, -1, Lcid ? Lcid : -1);
 			pid = szPid;
 
 			#ifndef NO_LOG
@@ -472,7 +472,7 @@ static void GetEpid(const REQUEST *const Request, RESPONSE *const Response, cons
 		*EpidSource = KmsResponseParameters[index].EpidSource;
 		#endif // NO_LOG
 	}
-	GetEpidFromString(Response, pid);
+	getEpidFromString(Response, pid);
 }
 
 
@@ -505,7 +505,7 @@ static void CheckRequest(const REQUEST *const Request)
 
 
 #ifndef NO_LOG
-static void LogResponse(const REQUEST *const Request, const RESPONSE *const Response, const BYTE *const HwId, const char *const EpidSource)
+static void logResponse(const REQUEST *const Request, const RESPONSE *const Response, const BYTE *const HwId, const char *const EpidSource)
 {
 	char utf8pid[PID_BUFFER_SIZE * 3];
 	ucs2_to_utf8(Response->KmsPID, utf8pid, PID_BUFFER_SIZE, PID_BUFFER_SIZE * 3);
@@ -520,7 +520,7 @@ static void LogResponse(const REQUEST *const Request, const RESPONSE *const Resp
 	else
 	{
 		logger(">>> Sending response, ePID source = %s\n", EpidSource);
-		LogResponseVerbose(utf8pid, HwId, Response, &logger);
+		logResponseVerbose(utf8pid, HwId, Response, &logger);
 	}
 	#endif // NO_VERBOSE_LOG
 
@@ -531,7 +531,7 @@ static BOOL CreateResponseBase(const REQUEST *const Request, RESPONSE *const Res
 {
 	const char* EpidSource;
 	#ifndef NO_LOG
-	LogRequest(Request);
+	logRequest(Request);
 	#ifdef _PEDANTIC
 	CheckRequest(Request);
 	#endif // _PEDANTIC
@@ -539,14 +539,11 @@ static BOOL CreateResponseBase(const REQUEST *const Request, RESPONSE *const Res
 
 	ProdListIndex_t index;
 
-	GetProductNameLE(&Request->AppId, AppList, &index);
+	getProductNameLE(&Request->AppId, AppList, &index);
 
 	if (index >= _countof(AppList) - 1) index = 0; //default to Windows
 
-	// Don't allow changes to the configuration yet
-	if (lock_read(SighupLock)) return FALSE;
-
-	GetEpid(Request, Response, &EpidSource, index, HwId);
+	getEpid(Request, Response, &EpidSource, index, HwId);
 
 	Response->Version = Request->Version;
 
@@ -558,17 +555,14 @@ static BOOL CreateResponseBase(const REQUEST *const Request, RESPONSE *const Res
 	Response->RenewalInterval    = LE32(RenewalInterval);
 
 	#ifndef NO_LOG
-	LogResponse(Request, Response, HwId, EpidSource);
+	logResponse(Request, Response, HwId, EpidSource);
 	#endif // NO_LOG
-
-	// Configuration changes now allowed
-	unlock_read(SighupLock);
 
 	return !0;
 }
 
 
-void Get16RandomBytes(void* ptr)
+void get16RandomBytes(void* ptr)
 {
 	int i;
 	for (i = 0; i < 4; i++)	((DWORD*)ptr)[i] = rand32();
@@ -668,7 +662,7 @@ size_t CreateResponseV6(REQUEST_V6 *restrict Request, BYTE *const response_data)
 	{
 		AesInitKey(&aes, AesKeyV6, TRUE, AES_KEY_BYTES);
 		Response.Version = Request->Version;
-		Get16RandomBytes(Response.Salt);
+		get16RandomBytes(Response.Salt);
 	}
 
 	AesDecryptCbc(&aes, NULL, Request->Salt, V6_DECRYPT_SIZE);
@@ -676,7 +670,7 @@ size_t CreateResponseV6(REQUEST_V6 *restrict Request, BYTE *const response_data)
 
 	if ( !CreateResponseBase(&Request->RequestBase, rb, Response.HwId) ) return 0;
 
-	Get16RandomBytes(Response.Rand);
+	get16RandomBytes(Response.Rand);
 	Sha256(Response.Rand, sizeof(Response.Rand), Response.Hash);
 	memcpy(Response.XorSalts, Request->Salt, sizeof(Response.XorSalts));
 	XorBlock(Response.XorSalts, Response.Rand);
@@ -749,7 +743,7 @@ BYTE *CreateRequestV6(size_t *size, const REQUEST* requestBase)
 	request_v6->Version = requestBase->Version;
 
 	// Initialize the IV
-	Get16RandomBytes(request_v6->Salt);
+	get16RandomBytes(request_v6->Salt);
 
 	// Set KMS Client Request Base
 	memcpy(&request_v6->RequestBase, requestBase, sizeof(REQUEST));
@@ -762,7 +756,7 @@ BYTE *CreateRequestV6(size_t *size, const REQUEST* requestBase)
 }
 
 
-static uint8_t CheckPidLength(const RESPONSE *const r)
+static uint8_t checkPidLength(const RESPONSE *const r)
 {
 	unsigned int i;
 
@@ -808,7 +802,7 @@ RESPONSE_RESULT DecryptResponseV4(RESPONSE_V4* Response_v4, const int responseSi
 	RESPONSE_RESULT result;
 
 	result.mask					 = (DWORD)-1;
-	result.PidLengthOK			 = CheckPidLength((RESPONSE*)response);
+	result.PidLengthOK			 = checkPidLength((RESPONSE*)response);
 	result.VersionOK			 = Response_v4->ResponseBase.Version == request_v4->RequestBase.Version;
 	result.HashOK				 = !memcmp(&Response_v4->Hash, hash, sizeof(Response_v4->Hash));
 	result.TimeStampOK			 = !memcmp(&Response_v4->ResponseBase.TimeStamp, &request_v4->RequestBase.TimeStamp, sizeof(FILETIME));
@@ -909,7 +903,7 @@ RESPONSE_RESULT DecryptResponseV6(RESPONSE_V6* Response_v6, int responseSize, ui
 		request_v6->Version == request_v6->RequestBase.Version;
 
 	// Check Base Request
-	result.PidLengthOK			= CheckPidLength(&((RESPONSE_V6*) response)->ResponseBase);
+	result.PidLengthOK			= checkPidLength(&((RESPONSE_V6*) response)->ResponseBase);
 	result.TimeStampOK			= !memcmp(&Response_v6->ResponseBase.TimeStamp, &request_v6->RequestBase.TimeStamp, sizeof(FILETIME));
 	result.ClientMachineIDOK	= IsEqualGUID(&Response_v6->ResponseBase.ClientMachineId, &request_v6->RequestBase.ClientMachineId);
 

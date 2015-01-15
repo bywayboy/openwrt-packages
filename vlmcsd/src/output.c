@@ -1,4 +1,7 @@
 #include "output.h"
+#include "shared_globals.h"
+#include "endian.h"
+#include "helpers.h"
 
 #ifndef NO_LOG
 static void vlogger(const char *message, va_list args)
@@ -121,7 +124,10 @@ static const char *LicenseStatusText[] =
 };
 
 
-void Uuid2StringLE(const GUID *const guid, char *const string)
+#ifndef _PEDANTIC
+static
+#endif // _PEDANTIC
+void uuid2StringLE(const GUID *const guid, char *const string)
 {
 	sprintf(string,
 				#ifdef _WIN32
@@ -133,12 +139,12 @@ void Uuid2StringLE(const GUID *const guid, char *const string)
 				(unsigned int)LE16( guid->Data2 ),
 				(unsigned int)LE16( guid->Data3 ),
 				(unsigned int)BE16( *(uint16_t*)guid->Data4 ),
-				(long long unsigned int)BE64( *(uint64_t*)(guid->Data4 + 2) ) >> 16
+				(unsigned long long)BE64(*(uint64_t*)(guid->Data4)) & 0xffffffffffffLL
 				);
 }
 
 
-void LogRequestVerbose(const REQUEST *const Request, const PRINTFUNC p)
+void logRequestVerbose(const REQUEST *const Request, const PRINTFUNC p)
 {
 	char guidBuffer[GUID_STRING_LENGTH + 1];
 	char WorkstationBuffer[3 * WORKSTATION_NAME_BUFFER];
@@ -150,36 +156,36 @@ void LogRequestVerbose(const REQUEST *const Request, const PRINTFUNC p)
 	p("Current client license status   : %u (%s)\n", (uint32_t)LE32(Request->LicenseStatus), LE32(Request->LicenseStatus) < _countof(LicenseStatusText) ? LicenseStatusText[LE32(Request->LicenseStatus)] : "Unknown");
 	p("Remaining time (0 = forever)    : %i minutes\n", (uint32_t)LE32(Request->GraceTime));
 
-	Uuid2StringLE(&Request->AppId, guidBuffer);
-	productName = GetProductNameLE(&Request->AppId, AppList, &index);
+	uuid2StringLE(&Request->AppId, guidBuffer);
+	productName = getProductNameLE(&Request->AppId, AppList, &index);
 	p("Application ID                  : %s (%s)\n", guidBuffer, productName);
 
-	Uuid2StringLE(&Request->SkuId, guidBuffer);
+	uuid2StringLE(&Request->SkuId, guidBuffer);
 
 	#ifndef NO_EXTENDED_PRODUCT_LIST
-	productName = GetProductNameLE(&Request->SkuId, ExtendedProductList, &index);
+	productName = getProductNameLE(&Request->SkuId, ExtendedProductList, &index);
 	#else
 	productName = "Unknown";
 	#endif
 
 	p("Client SKU ID                   : %s (%s)\n", guidBuffer, productName);
 
-	Uuid2StringLE(&Request->KmsId, guidBuffer);
+	uuid2StringLE(&Request->KmsId, guidBuffer);
 
 	#ifndef NO_BASIC_PRODUCT_LIST
-	productName = GetProductNameLE(&Request->KmsId, ProductList, &index);
+	productName = getProductNameLE(&Request->KmsId, ProductList, &index);
 	#else
 	productName = "Unknown";
 	#endif
 
 	p("Server SKU ID                   : %s (%s)\n", guidBuffer, productName);
 
-	Uuid2StringLE(&Request->ClientMachineId, guidBuffer);
+	uuid2StringLE(&Request->ClientMachineId, guidBuffer);
 	p("Client machine ID               : %s\n", guidBuffer);
 
 	char mbstr[64];
 	time_t st;
-	st = FileTimeToUnixTime(&Request->TimeStamp);
+	st = fileTimeToUnixTime(&Request->TimeStamp);
 	strftime(mbstr, sizeof(mbstr), "%Y-%m-%d %X", gmtime(&st));
 	p("Time stamp (UTC)                : %s\n", mbstr);
 
@@ -190,7 +196,7 @@ void LogRequestVerbose(const REQUEST *const Request, const PRINTFUNC p)
 }
 
 
-void LogResponseVerbose(const char *const ePID, const BYTE *const hwid, const RESPONSE *const response, const PRINTFUNC p)
+void logResponseVerbose(const char *const ePID, const BYTE *const hwid, const RESPONSE *const response, const PRINTFUNC p)
 {
 	char guidBuffer[GUID_STRING_LENGTH + 1];
 	//SYSTEMTIME st;
@@ -200,13 +206,13 @@ void LogResponseVerbose(const char *const ePID, const BYTE *const hwid, const RE
 	if (LE16(response->MajorVer) > 5)
 		p("KMS host Hardware ID            : %02X%02X%02X%02X%02X%02X%02X%02X\n", hwid[0], hwid[1], hwid[2], hwid[3], hwid[4], hwid[5], hwid[6], hwid[7]);
 
-	Uuid2StringLE(&response->ClientMachineId, guidBuffer);
+	uuid2StringLE(&response->ClientMachineId, guidBuffer);
 	p("Client machine ID               : %s\n", guidBuffer);
 
 	char mbstr[64];
 	time_t st;
 
-	st = FileTimeToUnixTime(&response->TimeStamp);
+	st = fileTimeToUnixTime(&response->TimeStamp);
 	strftime(mbstr, sizeof(mbstr), "%Y-%m-%d %X", gmtime(&st));
 	p("Time stamp (UTC)                : %s\n", mbstr);
 

@@ -36,6 +36,7 @@ static const BYTE SBox[] = {
 	0xB0, 0x54, 0xBB, 0x16
 };
 
+
 void XorBlock(const BYTE *const in, const BYTE *out) // Ensure that this is always 32 bit aligned
 {
 	/*UAA64( out, 0 ) ^= UAA64( in, 0 );
@@ -43,7 +44,7 @@ void XorBlock(const BYTE *const in, const BYTE *out) // Ensure that this is alwa
 
 	uint_fast8_t i;
 
-	for (i = 0; i < 4; i++)
+	for (i = 0; i < AES_BLOCK_WORDS; i++)
 	{
 		((DWORD*)out)[i] ^= ((DWORD*)in)[i];
 	}
@@ -75,6 +76,7 @@ void XorBlock(const BYTE *const in, const BYTE *out) // Ensure that this is alwa
 	return result ^ Mul(x, y - (1 << log2));
 }*/
 
+
 void MixColumnsR(BYTE *restrict state)
 {
 	uint_fast8_t i = 0;
@@ -90,6 +92,7 @@ void MixColumnsR(BYTE *restrict state)
 	}
 }
 
+
 static DWORD SubDword(DWORD v)
 {
 	BYTE *b = (BYTE *)&v;
@@ -99,6 +102,7 @@ static DWORD SubDword(DWORD v)
 
 	return v;
 }
+
 
 void AesInitKey(AesCtx *Ctx, const BYTE *Key, BOOL IsV6, int RijndaelKeyBytes)
 {
@@ -133,6 +137,8 @@ void AesInitKey(AesCtx *Ctx, const BYTE *Key, BOOL IsV6, int RijndaelKeyBytes)
 		_p[ 8 * 16 ] ^= 0xE4;
 	}
 }
+
+
 #if !defined(_CRYPTO_OPENSSL) || !defined(_USE_AES_FROM_OPENSSL) || defined(_OPENSSL_SOFTWARE)
 static void SubBytes(BYTE *block)
 {
@@ -141,6 +147,7 @@ static void SubBytes(BYTE *block)
 	for (i = 0; i < AES_BLOCK_BYTES; i++)
 		block[i] = SBox[ block[i] ];
 }
+
 
 static void ShiftRows(BYTE *state)
 {
@@ -154,6 +161,7 @@ static void ShiftRows(BYTE *state)
 	}
 };
 
+
 static void MixColumns(BYTE *state)
 {
 	uint_fast8_t i = 0;
@@ -163,6 +171,7 @@ static void MixColumns(BYTE *state)
 		((DWORD *) state)[i] = LE32(Mul2(word) ^ ROR32(Mul3(word), 8) ^ ROR32(word, 16) ^ ROR32(word, 24));
 	}
 }
+
 
 void AesEncryptBlock(const AesCtx *const Ctx, BYTE *block)
 {
@@ -181,6 +190,7 @@ void AesEncryptBlock(const AesCtx *const Ctx, BYTE *block)
 
 	AddRoundKey(block, &Ctx->Key[ Ctx->rounds << 2 ]);
 }
+
 
 void AesCmacV4(BYTE *Message, size_t MessageSize, BYTE *HashOut)
 {
@@ -231,6 +241,7 @@ static const BYTE SBoxR[] = {
 	0x55, 0x21, 0x0C, 0x7D
 };
 
+
 static void ShiftRowsR(BYTE *state)
 {
 	BYTE b[AES_BLOCK_BYTES];
@@ -242,6 +253,7 @@ static void ShiftRowsR(BYTE *state)
 		state[i] = b[(i - ((i & 0x3) << 2)) & 0xf];
 }
 
+
 static void SubBytesR(BYTE *block)
 {
 	uint_fast8_t i;
@@ -249,6 +261,7 @@ static void SubBytesR(BYTE *block)
 	for (i = 0; i < AES_BLOCK_BYTES; i++)
 		block[i] = SBoxR[ block[i] ];
 }
+
 
 void AesEncryptCbc(const AesCtx *const Ctx, BYTE *restrict iv, BYTE *restrict data, size_t *restrict len)
 {
@@ -274,6 +287,7 @@ void AesEncryptCbc(const AesCtx *const Ctx, BYTE *restrict iv, BYTE *restrict da
 	}
 }
 
+
 void AesDecryptBlock(const AesCtx *const Ctx, BYTE *block)
 {
 	uint_fast8_t  i;
@@ -291,6 +305,7 @@ void AesDecryptBlock(const AesCtx *const Ctx, BYTE *block)
 		MixColumnsR(block);
 	}
 }
+
 
 void AesDecryptCbc(const AesCtx *const Ctx, BYTE *iv, BYTE *data, size_t len)
 {

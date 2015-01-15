@@ -1,32 +1,10 @@
 #ifndef __main_h
 #define __main_h
 
-#include <stdio.h>
-#include <stdlib.h>
-#include <string.h>
-#include <errno.h>
-#include <stdint.h>
-
-#ifndef _WIN32
-#include <pwd.h>
-#include <grp.h>
-#include <sys/types.h>
-
-#ifndef NO_LIMIT
-#include <sys/ipc.h>
-#if !__ANDROID__
-#include <sys/shm.h>
-#else
-#include <sys/syscall.h>
-#endif // !__ANDROID__
-#endif // NO_LIMIT
-
-#include <sys/wait.h>
-#include <unistd.h>
-#include <fcntl.h>
-#include <sys/stat.h>
-#include <semaphore.h>
-#endif // !_WIN32
+#ifndef CONFIG
+#define CONFIG "config.h"
+#endif // CONFIG
+#include CONFIG
 
 #define __T(x)    #x
 #define  _T(x) __T(x)
@@ -36,15 +14,9 @@ extern char *fn_ini;
 extern char *fn_log;
 
 #include "types.h"
-#include "endian.h"
-#include "shared_globals.h"
-#include "output.h"
-#include "network.h"
-#include "ntservice.h"
-#include "helpers.h"
 
 //int main(int argc, CARGV);
-extern void CleanUp();
+extern void cleanup(int_fast8_t RemovePidFile);
 
 #ifdef _NTSERVICE
 int newmain();
@@ -60,5 +32,29 @@ int server_main(int argc, CARGV argv);
 #define SA_NOCLDWAIT 0
 #endif
 
+#ifndef NO_INI_FILE
+#define INI_PARAM_RANDOMIZATION_LEVEL 1
+#define INI_PARAM_LCID 2
+#define INI_PARAM_LISTEN 3
+#define INI_PARAM_MAX_WORKERS 4
+#define INI_PARAM_CONNECTION_TIMEOUT 5
+#define INI_PARAM_PID_FILE 6
+#define INI_PARAM_LOG_FILE 7
+#define INI_PARAM_LOG_VERBOSE 8
+#define INI_PARAM_ACTIVATION_INTERVAL 9
+#define INI_PARAM_RENEWAL_INTERVAL 10
+#define INI_PARAM_DISCONNECT_IMMEDIATELY 11
+#define INI_PARAM_UID 12
+#define INI_PARAM_GID 13
+
+#define INI_FILE_PASS_1 1
+#define INI_FILE_PASS_2 2
+
+typedef struct
+{
+	const char* const Name;
+	uint_fast8_t Id;
+} IniFileParameter_t, *PIniFileParameter_t;
+#endif // NO_INI_FILE
 
 #endif // __main_h

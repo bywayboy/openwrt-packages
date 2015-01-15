@@ -1,8 +1,12 @@
 #ifndef __types_h
 #define __types_h
 
+#ifndef CONFIG
+#define CONFIG "config.h"
+#endif // CONFIG
+#include CONFIG
+
 #include <stdint.h>
-#include <stdlib.h>
 #include <limits.h>
 
 #ifdef __sun__
@@ -80,19 +84,6 @@ typedef uint8_t ProdListIndex_t;
 #define unlock_mutex(x)
 #endif // !USE_THREADS
 
-// ReadWrite locks
-#if !defined(_WIN32) && defined(USE_THREADS) && (!defined(NO_INI_FILE) || !defined(NO_RANDOM_EPID)) && !defined(NO_SOCKETS)
-#define lock_read(x) pthread_rwlock_rdlock(&x)
-#define lock_write(x) pthread_rwlock_wrlock(&x)
-#define unlock_read(x) pthread_rwlock_unlock(&x)
-#define unlock_write(x) pthread_rwlock_unlock(&x)
-#else
-#define lock_read(x) 0
-#define lock_write(x) 0
-#define unlock_read(x)
-#define unlock_write(x)
-#endif
-
 // Semaphores
 #ifndef _WIN32
 #define semaphore_wait(x) sem_wait(x)
@@ -114,6 +105,10 @@ typedef uint8_t ProdListIndex_t;
 #if (defined(_WIN32) || defined(__CYGWIN__)) && !defined(NO_SOCKETS)
 #define _NTSERVICE
 #endif
+
+#if (defined(_WIN32) || defined(NO_SOCKETS)) && !defined(NO_SIGHUP)
+#define NO_SIGHUP
+#endif // (defined(_WIN32) || defined(NO_SOCKETS)) && !defined(NO_SIGHUP)
 
 #ifdef _WIN32
 #ifndef USE_THREADS

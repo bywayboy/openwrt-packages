@@ -1,6 +1,11 @@
 #ifndef __crypto_polarssl_h
 #define __crypto_polarssl_h
 
+#ifndef CONFIG
+#define CONFIG "config.h"
+#endif // CONFIG
+#include CONFIG
+
 #include <polarssl/version.h>
 #include "crypto.h"
 

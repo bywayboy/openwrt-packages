@@ -1,6 +1,11 @@
 #ifndef __crypto_internal_h
 #define __crypto_internal_h
 
+#ifndef CONFIG
+#define CONFIG "config.h"
+#endif // CONFIG
+#include CONFIG
+
 #include "crypto.h"
 
 typedef struct {

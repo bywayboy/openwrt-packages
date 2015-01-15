@@ -1,4 +1,21 @@
 #include "vlmcs.h"
+#include <stdio.h>
+#include <stdlib.h>
+#include <string.h>
+#include <errno.h>
+#include <stdint.h>
+#include <getopt.h>
+#ifndef _WIN32
+#include <sys/ioctl.h>
+#include <termios.h>
+#endif // _WIN32
+#include "endian.h"
+#include "shared_globals.h"
+#include "output.h"
+#include "network.h"
+#include "kms.h"
+#include "helpers.h"
+#include "rpc.h"
 
 
 // Function Prototypes
@@ -15,7 +32,7 @@ static const char *ClientGuid = NULL;
 static const char *WorkstationName = NULL;
 static int GracePeriodRemaining = 43200; //30 days
 static const char *RemoteAddr;
-static BOOL ReconnectForEachRequest = FALSE;
+static int_fast8_t ReconnectForEachRequest = FALSE;
 static WORD kmsVersionMinor = 0;
 static int AddressFamily = AF_UNSPEC;
 
@@ -85,9 +102,9 @@ static int RequestsToGo = 1;
 static BOOL firstRequestSent = FALSE;
 
 
-static void String2UuidOrExit(const char *const restrict input, GUID *const restrict guid)
+static void string2UuidOrExit(const char *const restrict input, GUID *const restrict guid)
 {
-	if (strlen(input) != GUID_STRING_LENGTH || !String2Uuid(input, guid))
+	if (strlen(input) != GUID_STRING_LENGTH || !string2Uuid(input, guid))
 	{
 		errorout("Fatal: Command line contains an invalid GUID.\n");
 		exit(!0);
@@ -97,7 +114,7 @@ static void String2UuidOrExit(const char *const restrict input, GUID *const rest
 
 #ifndef NO_HELP
 
-__noreturn static void ClientUsage(const char* const programName)
+__noreturn static void clientUsage(const char* const programName)
 {
 	errorout(
 		"vlmcs %s \n\n"
@@ -139,7 +156,7 @@ __noreturn static void ClientUsage(const char* const programName)
 	exit(!0);
 }
 
-__pure static int GetLineWidth(void)
+__pure static int getLineWidth(void)
 {
 	#ifdef TERMINAL_FIXED_WIDTH // For Toolchains that to not have winsize
 	return TERMINAL_FIXED_WIDTH;
@@ -173,9 +190,9 @@ __pure static int GetLineWidth(void)
 
 }
 
-__noreturn static void ShowProducts(const char* const programName, PRINTFUNC p)
+__noreturn static void showProducts(const char* const programName, PRINTFUNC p)
 {
-	int cols = GetLineWidth();
+	int cols = getLineWidth();
 	int itemsPerLine;
 	uint8_t i;
 
@@ -218,7 +235,7 @@ __noreturn static void ShowProducts(const char* const programName, PRINTFUNC p)
 
 	const KmsIdList* currentProduct;
 	uint_fast8_t longestString = 0;
-	uint8_t k, items = GetExtendedProductListSize();
+	uint8_t k, items = getExtendedProductListSize();
 
 	p("You may also use these product names or numbers:\n\n");
 
@@ -259,7 +276,7 @@ __noreturn static void ShowProducts(const char* const programName, PRINTFUNC p)
 	exit(0);
 }
 
-__noreturn static void Examples(const char* const programName)
+__noreturn static void examples(const char* const programName)
 {
 	printf(
 		"\nRequest activation for Office2013 using V4 protocol from 192.168.1.5:1688\n"
@@ -287,7 +304,7 @@ __noreturn static void Examples(const char* const programName)
 #else // NO_HELP
 
 
-__noreturn static void ClientUsage(const char* const programName)
+__noreturn static void clientUsage(const char* const programName)
 {
 	errorout("Incorrect parameter specified.\n");
 	exit(!0);
@@ -297,7 +314,7 @@ __noreturn static void ClientUsage(const char* const programName)
 #endif // NO_HELP
 
 
-static BOOL FindLicensePackByName(const char* const name, LicensePack* const lp)
+static BOOL findLicensePackByName(const char* const name, LicensePack* const lp)
 {
 	// Try to find a package in the short list first
 
@@ -323,10 +340,10 @@ static BOOL FindLicensePackByName(const char* const name, LicensePack* const lp)
 
 	// search extended product list
 
-    uint8_t items = GetExtendedProductListSize();
+    uint8_t items = getExtendedProductListSize();
     int index;
 
-    if (StringToInt(name, 1, items, &index))
+    if (stringToInt(name, 1, items, &index))
     {
     	index--;
     }
@@ -355,20 +372,20 @@ static const char* const client_optstring = "+i:l:a:s:k:c:w:r:n:t:g:pTv456mexd";
 
 
 //First pass. We handle only "-l". Since -a -k -s -4 -5 and -6 are exceptions to -l, we process -l first
-static void ParseCommandLinePass1(const char *const programName, const int argc, CARGV argv)
+static void parseCommandLinePass1(const char *const programName, const int argc, CARGV argv)
 {
 	int o;
-	OptReset();
+	optReset();
 
 	for (opterr = 0; ( o = getopt(argc, (char* const*)argv, client_optstring) ) > 0; ) switch (o)
 	{
 		case 'l': // Set "License Pack" and protocol version (e.g. Windows8, Office2013v5, ...)
 
-			if (!FindLicensePackByName(optarg, &ActiveLicensePack))
+			if (!findLicensePackByName(optarg, &ActiveLicensePack))
 			{
 				errorout("Invalid client application. \"%s\" is not valid for -l.\n\n", optarg);
 				#ifndef NO_HELP
-				ShowProducts(programName, &printf);
+				showProducts(programName, &printf);
 				#endif // !NO_HELP
 			}
 
@@ -381,10 +398,10 @@ static void ParseCommandLinePass1(const char *const programName, const int argc,
 
 
 // Second Pass. Handle all options except "-l"
-static void ParseCommandLinePass2(const char *const programName, const int argc, CARGV argv)
+static void parseCommandLinePass2(const char *const programName, const int argc, CARGV argv)
 {
 	int o;
-	OptReset();
+	optReset();
 
 	for (opterr = 0; ( o = getopt(argc, (char* const*)argv, client_optstring) ) > 0; ) switch (o)
 	{
@@ -392,19 +409,19 @@ static void ParseCommandLinePass2(const char *const programName, const int argc,
 
 			case 'e': // Show examples
 
-				Examples(programName);
+				examples(programName);
 				break;
 
 			case 'x': // Show Apps
 
-				ShowProducts(programName, &errorout);
+				showProducts(programName, &errorout);
 				break;
 
 			#endif // NO_HELP
 
 			case 'i':
 
-				switch(GetOptionArgumentInt(o, 4, 6))
+				switch(getOptionArgumentInt(o, 4, 6))
 				{
 					case 4:
 						AddressFamily = AF_INET;
@@ -427,12 +444,12 @@ static void ParseCommandLinePass2(const char *const programName, const int argc,
 
 			case 'n': // Fixed number of Requests (regardless, whether they are required)
 
-				FixedRequests = GetOptionArgumentInt(o, 1, INT_MAX);
+				FixedRequests = getOptionArgumentInt(o, 1, INT_MAX);
 				break;
 
 			case 'r': // Fake minimum required client count
 
-				ActiveLicensePack.RequiredClientCount = GetOptionArgumentInt(o, 1, INT_MAX);
+				ActiveLicensePack.RequiredClientCount = getOptionArgumentInt(o, 1, INT_MAX);
 				break;
 
 			case 'c': // use a specific client GUID
@@ -453,22 +470,22 @@ static void ParseCommandLinePass2(const char *const programName, const int argc,
 					exit(!0);
 				}
 
-				String2UuidOrExit(optarg, (GUID*)ActiveLicensePack.ApplicationID);
+				string2UuidOrExit(optarg, (GUID*)ActiveLicensePack.ApplicationID);
 				break;
 
 			case 'g': // Set custom "grace" time in minutes (default 30 days)
 
-				GracePeriodRemaining = GetOptionArgumentInt(o, 0, INT_MAX);
+				GracePeriodRemaining = getOptionArgumentInt(o, 0, INT_MAX);
 				break;
 
 			case 's': // Set specfic SKU ID
 
-				String2UuidOrExit(optarg, &ActiveLicensePack.ID);
+				string2UuidOrExit(optarg, &ActiveLicensePack.ID);
 				break;
 
 			case 'k': // Set specific KMS ID
 
-				String2UuidOrExit(optarg, &ActiveLicensePack.KmsID);
+				string2UuidOrExit(optarg, &ActiveLicensePack.KmsID);
 				break;
 
 			case '4': // Force V4 protocol
@@ -506,7 +523,7 @@ static void ParseCommandLinePass2(const char *const programName, const int argc,
 
 			case 't':
 
-				licenseStatus = GetOptionArgumentInt(o, 0, 6) & 0xff;
+				licenseStatus = getOptionArgumentInt(o, 0, 6) & 0xff;
 				break;
 
 			case 'T':
@@ -518,12 +535,12 @@ static void ParseCommandLinePass2(const char *const programName, const int argc,
 				break;
 
 			default:
-				ClientUsage(programName);
+				clientUsage(programName);
 	}
 }
 
 
-void DisplayResponse(const RESPONSE_RESULT result, RESPONSE* response, BYTE *hwid)
+void displayResponse(const RESPONSE_RESULT result, RESPONSE* response, BYTE *hwid)
 {
 	fflush(stdout);
 
@@ -569,15 +586,15 @@ void DisplayResponse(const RESPONSE_RESULT result, RESPONSE* response, BYTE *hwi
 				"Size of KMS Response            : %u (0x%x)\n", result.effectiveResponseSize, result.effectiveResponseSize
 		);
 
-		LogResponseVerbose(ePID, hwid, response, &printf);
+		logResponseVerbose(ePID, hwid, response, &printf);
 		printf("\n");
 	}
 }
 
 
-static void EstablishRpc(SOCKET *s)
+static void establishRpc(SOCKET *s)
 {
-	*s = ConnectToAddress(RemoteAddr, AddressFamily);
+	*s = connectToAddress(RemoteAddr, AddressFamily);
 	if (*s == INVALID_SOCKET)
 	{
 		errorout("Fatal: Could not connect to %s\n", RemoteAddr);
@@ -586,7 +603,7 @@ static void EstablishRpc(SOCKET *s)
 	if (verbose)
 		printf("\nPerforming RPC bind ...\n");
 
-	if (RpcBindClient(*s))
+	if (rpcBindClient(*s))
 	{
 		errorout("Fatal: Could not bind RPC\n");
 		exit(!0);
@@ -609,7 +626,7 @@ static int SendActivationRequest(const SOCKET sock, RESPONSE *baseResponse, REQU
 	else
 		request = CreateRequestV6(&requestSize, baseRequest);
 
-	if (!(status = RpcSendRequest(sock, request, requestSize, &response, &responseSize)))
+	if (!(status = rpcSendRequest(sock, request, requestSize, &response, &responseSize)))
 	{
 		if (LE16(((RESPONSE*)(response))->MajorVer) == 4)
 		{
@@ -660,10 +677,10 @@ int client_main(const int argc, CARGV argv)
 
 	#endif // _NTSERVICE
 
-	RandomNumberInit();
+	randomNumberInit();
 	ActiveLicensePack = *LicensePackList; //first license is Windows Vista
 
-	ParseCommandLinePass1(argv[0], argc, argv);
+	parseCommandLinePass1(argv[0], argc, argv);
 
 	int_fast8_t useDefaultHost = FALSE;
 
@@ -676,16 +693,16 @@ int client_main(const int argc, CARGV argv)
 
 	if (optind < argc - 1)
 	{
-		ParseCommandLinePass1(argv[0], argc - hostportarg, argv + hostportarg);
+		parseCommandLinePass1(argv[0], argc - hostportarg, argv + hostportarg);
 
 		if (optind < argc - hostportarg)
-			ClientUsage(argv[0]);
+			clientUsage(argv[0]);
 	}
 
-	ParseCommandLinePass2(argv[0], argc, argv);
+	parseCommandLinePass2(argv[0], argc, argv);
 
 	if (optind < argc - 1)
-		ParseCommandLinePass2(argv[0], argc - hostportarg, argv + hostportarg);
+		parseCommandLinePass2(argv[0], argc - hostportarg, argv + hostportarg);
 
 	if (useDefaultHost)
 		RemoteAddr = AddressFamily == AF_INET6 ? "::1" : "127.0.0.1";
@@ -699,15 +716,15 @@ int client_main(const int argc, CARGV argv)
 	{
 		REQUEST request;
 		CreateRequestBase(&request);
-		HWID hwid;
+		hwid_t hwid;
 		int status;
 
 		if (s == INVALID_SOCKET )
-			EstablishRpc(&s);
+			establishRpc(&s);
 		else
 		{
 			// Check for lame KMS emulators that close the socket after each request
-			BOOL disconnected = IsDisconnected(s);
+			int_fast8_t disconnected = isDisconnected(s);
 
 			if (disconnected)
 				errorout("\nWarning: Server closed RPC connection (probably non-multitasked KMS emulator)\n");
@@ -715,7 +732,7 @@ int client_main(const int argc, CARGV argv)
 			if (ReconnectForEachRequest || disconnected)
 			{
 				socketclose(s);
-				EstablishRpc(&s);
+				establishRpc(&s);
 			}
 		}
 
@@ -743,7 +760,7 @@ int client_main(const int argc, CARGV argv)
 			case 1:
 				errorout("An RPC protocol error has occured\n");
 				socketclose(s);
-				EstablishRpc(&s);
+				establishRpc(&s);
 				break;
 
 			default:
@@ -771,7 +788,7 @@ int client_main(const int argc, CARGV argv)
 
 			fflush(stderr);
 			printf("%i of %i ", requests + 1, RequestsToGo + requests + 1);
-			DisplayResponse(result, &response, hwid);
+			displayResponse(result, &response, hwid);
 			firstRequestSent = TRUE;
 		}
 	}
@@ -792,16 +809,16 @@ void CreateRequestBase(REQUEST *Request)
 	LEGUID(&Request->SkuId, &ActiveLicensePack.ID);
 	LEGUID(&Request->KmsId, &ActiveLicensePack.KmsID);
 
-	GetUnixTimeAsFileTime(&Request->TimeStamp);
+	getUnixTimeAsFileTime(&Request->TimeStamp);
 	Request->MinimumClients = LE32(ActiveLicensePack.RequiredClientCount);
 
 	if (ClientGuid)
 	{
-		String2UuidOrExit(ClientGuid, &Request->ClientMachineId);
+		string2UuidOrExit(ClientGuid, &Request->ClientMachineId);
 	}
 	else
 	{
-		Get16RandomBytes(&Request->ClientMachineId);
+		get16RandomBytes(&Request->ClientMachineId);
 
 		// Set reserved UUID bits
 		Request->ClientMachineId.Data4[0] &= 0x3F;
@@ -849,7 +866,7 @@ void CreateRequestBase(REQUEST *Request)
 	if (verbose)
 	{
 		printf("\nRequest Parameters\n==================\n\n");
-		LogRequestVerbose(Request, &printf);
+		logRequestVerbose(Request, &printf);
 		printf("\n");
 	}
 }

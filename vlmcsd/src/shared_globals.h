@@ -1,6 +1,11 @@
 #ifndef INCLUDED_SHARED_GLOBALS_H
 #define INCLUDED_SHARED_GLOBALS_H
 
+#ifndef CONFIG
+#define CONFIG "config.h"
+#endif // CONFIG
+#include CONFIG
+
 #include <sys/types.h>
 
 #ifndef _WIN32
@@ -32,8 +37,7 @@
 #include <ctype.h>
 #include <stdarg.h>
 #include <semaphore.h>
-#include "output.h"
-#include "rpc.h"
+#include "types.h"
 
 #define MAX_KMSAPPS 3
 typedef struct
@@ -44,8 +48,8 @@ typedef struct
 	const char* EpidSource;
 	#endif // NO_LOG
 	//uint_fast8_t HwIdSource;
-	uint_fast8_t EpidFromMalloc;
-	uint_fast8_t HwIdFromMalloc;
+	//uint_fast8_t EpidFromMalloc;
+	//uint_fast8_t HwIdFromMalloc;
 } KmsResponseParam_t, *PKmsResponseParam_t;
 
 #ifndef NO_LIMIT
@@ -66,10 +70,6 @@ typedef struct
 #define SENDRECV_T(v)  int (WINAPI *v)(int, BYTE*, int, int)
 #endif
 
-#ifndef VERSION
-#define VERSION "private build"
-#endif
-
 extern const char *const Version;
 
 //Fix for stupid eclipse parser
@@ -85,21 +85,26 @@ extern char *fn_ini;
 #endif
 
 extern const char *defaultport;
-extern int global_argc;
-extern CARGV global_argv;
+extern int global_argc, multi_argc;
+extern CARGV global_argv, multi_argv;
 extern int_fast8_t nodaemon;
 extern int_fast8_t InetdMode;
-extern const char* const optstring;
 extern DWORD ActivationInterval;
 extern DWORD RenewalInterval;
 extern int_fast8_t UseMultiplexedRpc;
 extern int_fast8_t DisconnectImmediately;
 extern DWORD ServerTimeout;
 extern KmsResponseParam_t KmsResponseParameters[MAX_KMSAPPS];
+extern const char *const cIPv4;
+extern const char *const cIPv6;
 
 #if !defined(NO_LIMIT) && !defined (NO_SOCKETS)
 extern int32_t MaxTasks;
 #endif // !defined(NO_LIMIT) && !defined (NO_SOCKETS)
+
+#if !defined(NO_SOCKETS) && !defined(NO_SIGHUP) && !defined(_WIN32)
+extern int_fast8_t IsRestarted;
+#endif // !defined(NO_SOCKETS) && !defined(NO_SIGHUP) && !defined(_WIN32)
 
 #ifndef NO_LOG
 extern char *fn_log;
@@ -132,10 +137,10 @@ extern int_fast8_t IsNTService;
 extern int_fast8_t ServiceShutdown;
 #endif
 
-#ifndef _WIN32
+/*#ifndef _WIN32
 extern gid_t gid;
 extern uid_t uid;
-#endif
+#endif*/
 
 #ifndef NO_LOG
 #ifdef USE_THREADS
@@ -147,10 +152,5 @@ extern CRITICAL_SECTION logmutex;
 #endif // USE_THREADS
 #endif // NO_LOG
 
-#ifndef _WIN32
-#ifdef USE_THREADS
-extern pthread_rwlock_t SighupLock;
-#endif // USE_THREADS
-#endif // _WIN32
 
 #endif // INCLUDED_SHARED_GLOBALS_H

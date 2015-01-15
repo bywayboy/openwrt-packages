@@ -1,6 +1,11 @@
 #ifndef __rpc_h
 #define __rpc_h
 
+#ifndef CONFIG
+#define CONFIG "config.h"
+#endif // CONFIG
+#include CONFIG
+
 #include "types.h"
 
 typedef struct {
@@ -89,8 +94,8 @@ typedef struct {
 #define RPC_PF_MAYBE			64
 #define RPC_PF_OBJECT			128
 
-void RpcServer(const SOCKET sock, const DWORD RpcAssocGroup);
-int RpcBindClient(const SOCKET sock);
-int RpcSendRequest(const SOCKET sock, const BYTE *const KmsRequest, const size_t requestSize, BYTE **KmsResponse, size_t *const responseSize);
+void rpcServer(const SOCKET sock, const DWORD RpcAssocGroup);
+int rpcBindClient(const SOCKET sock);
+int rpcSendRequest(const SOCKET sock, const BYTE *const KmsRequest, const size_t requestSize, BYTE **KmsResponse, size_t *const responseSize);
 
 #endif // __rpc_h

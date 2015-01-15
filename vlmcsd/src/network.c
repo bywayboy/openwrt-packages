@@ -1,9 +1,21 @@
+#ifndef _GNU_SOURCE
+#define _GNU_SOURCE
+#endif
+
+#include <string.h>
+#ifndef _WIN32
+#include <unistd.h>
+#include <fcntl.h>
+#include <errno.h>
+#endif
+
 #include "network.h"
 #include "output.h"
 #include "vlmcs.h"
+#include "helpers.h"
+#include "shared_globals.h"
+#include "rpc.h"
 
-static const char *const cIPv4 = "IPv4";
-static const char *const cIPv6 = "IPv6";
 
 // Send or receive a fixed number of bytes regardless if received in one or more chunks
 BOOL sendrecv(int sock, BYTE *data, int len, int do_send)
@@ -24,7 +36,7 @@ BOOL sendrecv(int sock, BYTE *data, int len, int do_send)
 }
 
 
-static int_fast8_t ip2str(char *restrict result, size_t resultlen, const struct sockaddr *const sa, socklen_t socklen)
+static int_fast8_t ip2str(char *restrict result, const size_t resultlen, const struct sockaddr *const restrict sa, const socklen_t socklen)
 {
 	static const char *const fIPv4 = "%s:%s";
 	static const char *const fIPv6 = "[%s]:%s";
@@ -36,7 +48,7 @@ static int_fast8_t ip2str(char *restrict result, size_t resultlen, const struct 
 }
 
 
-static int GetSocketList(struct addrinfo **saList, const char *const addr, const int flags, const int AddressFamily)
+static int_fast8_t getSocketList(struct addrinfo **saList, const char *const addr, const int flags, const int AddressFamily)
 {
 	int rc;
 
@@ -89,7 +101,7 @@ static int GetSocketList(struct addrinfo **saList, const char *const addr, const
 }
 
 
-static BOOL SetBlockingEnabled(SOCKET fd, BOOL blocking)
+static int_fast8_t setBlockingEnabled(SOCKET fd, int_fast8_t blocking)
 {
 	if (fd < 0) return FALSE;
 
@@ -111,15 +123,15 @@ static BOOL SetBlockingEnabled(SOCKET fd, BOOL blocking)
 }
 
 
-int IsDisconnected(const SOCKET s)
+int_fast8_t isDisconnected(const SOCKET s)
 {
 	char buffer[1];
 
-	if (!SetBlockingEnabled(s, FALSE)) return TRUE;
+	if (!setBlockingEnabled(s, FALSE)) return TRUE;
 
 	int n = recv(s, buffer, 1, MSG_PEEK);
 
-	if (!SetBlockingEnabled(s, TRUE)) return TRUE;
+	if (!setBlockingEnabled(s, TRUE)) return TRUE;
 	if (n == 0) return TRUE;
 
 	return FALSE;
@@ -128,13 +140,13 @@ int IsDisconnected(const SOCKET s)
 
 // Connect to TCP address addr (e.g. "kms.example.com:1688") and return an
 // open socket for the connection if successful or INVALID_SOCKET otherwise
-SOCKET ConnectToAddress(const char *const addr, const int AddressFamily)
+SOCKET connectToAddress(const char *const addr, const int AddressFamily)
 {
 	struct addrinfo *saList, *sa;
 	SOCKET s = INVALID_SOCKET;
 	char szAddr[128];
 
-	if (!GetSocketList(&saList, addr, 0, AddressFamily)) return INVALID_SOCKET;
+	if (!getSocketList(&saList, addr, 0, AddressFamily)) return INVALID_SOCKET;
 
 	for (sa = saList; sa; sa = sa->ai_next)
 	{
@@ -192,7 +204,7 @@ SOCKET ConnectToAddress(const char *const addr, const int AddressFamily)
 
 // Create a Listening socket for addrinfo sa and return socket s
 // szHost and szPort are for logging only
-static int ListenOnAddress(const struct addrinfo *const ai, SOCKET *s)
+static int listenOnAddress(const struct addrinfo *const ai, SOCKET *s)
 {
 	int error;
 	char ipstr[64];
@@ -244,13 +256,13 @@ static int ListenOnAddress(const struct addrinfo *const ai, SOCKET *s)
 
 // Adds a listening socket for an address string,
 // e.g. 127.0.0.1:1688 or [2001:db8:dead:beef::1]:1688
-static int AddListeningSocket(const char *const addr)
+BOOL addListeningSocket(const char *const addr)
 {
 	struct addrinfo *aiList, *ai;
 	int result = FALSE;
 	SOCKET *s = SocketList + numsockets;
 
-	if (GetSocketList(&aiList, addr, AI_PASSIVE | AI_NUMERICHOST, AF_UNSPEC))
+	if (getSocketList(&aiList, addr, AI_PASSIVE | AI_NUMERICHOST, AF_UNSPEC))
 	{
 		for (ai = aiList; ai; ai = ai->ai_next)
 		{
@@ -265,7 +277,7 @@ static int AddListeningSocket(const char *const addr)
 				break;
 			}
 
-			if (!ListenOnAddress(ai, s))
+			if (!listenOnAddress(ai, s))
 			{
 				numsockets++;
 				result = TRUE;
@@ -279,7 +291,7 @@ static int AddListeningSocket(const char *const addr)
 
 
 // Just create some dummy sockets to see if we have a specific protocol (IPv4 or IPv6)
-__pure static int_fast8_t CheckProtocolStack(const int addressfamily)
+__pure int_fast8_t checkProtocolStack(const int addressfamily)
 {
 	SOCKET s; // = INVALID_SOCKET;
 
@@ -290,76 +302,6 @@ __pure static int_fast8_t CheckProtocolStack(const int addressfamily)
 	return success;
 }
 
-
-int SetupListeningSockets(uint_fast8_t maxsockets)
-{
-	int o;
-	uint_fast8_t allocsockets = maxsockets ? maxsockets : 2;
-	int_fast8_t HaveIPv6Stack = 0;
-	int_fast8_t HaveIPv4Stack = 0;
-	int_fast8_t v6required = 0;
-	int_fast8_t v4required = 0;
-
-	if (!(SocketList = (SOCKET*)malloc((size_t)allocsockets * sizeof(SOCKET)))) return !0;
-
-	HaveIPv4Stack = CheckProtocolStack(AF_INET);
-	HaveIPv6Stack = CheckProtocolStack(AF_INET6);
-
-	// Reset getopt since we've alread used it
-	OptReset();
-
-	for (opterr = 0; ( o = getopt(global_argc, (char* const*)global_argv, optstring) ) > 0; ) switch (o)
-	{
-	case '4':
-
-		if (!HaveIPv4Stack)
-		{
-			printerrorf("Fatal: Your system does not support %s.\n", cIPv4);
-			return(!0);
-		}
-		v4required = 1;
-		break;
-
-	case '6':
-
-		if (!HaveIPv6Stack)
-		{
-			printerrorf("Fatal: Your system does not support %s.\n", cIPv6);
-			return(!0);
-		}
-		v6required = 1;
-		break;
-
-	case 'L':
-
-		AddListeningSocket(optarg);
-		break;
-
-	case 'P':
-
-		defaultport = optarg;
-		break;
-
-	default:
-
-		break;
-	}
-
-	// if -L hasn't been specified on the command line, use default sockets (all IP addresses)
-	// maxsocket results from first pass parsing the arguments
-	if (!maxsockets)
-	{
-		if (HaveIPv6Stack && (v6required || !v4required)) AddListeningSocket("::");
-		if (HaveIPv4Stack && (v4required || !v6required)) AddListeningSocket("0.0.0.0");
-	}
-
-	if (!numsockets)
-	{
-		printerrorf("Fatal: Could not listen on any socket.\n");
-		return(!0);
-	}
-	return(0);
-}
 
 // Build an fd_set of all listening socket then use select to wait for an incoming connection
 static SOCKET network_accept_any()
@@ -400,7 +342,7 @@ static SOCKET network_accept_any()
 }
 
 
-void CloseAllListeningSockets()
+void closeAllListeningSockets()
 {
 	int i;
 
@@ -413,7 +355,7 @@ void CloseAllListeningSockets()
 #endif // NO_SOCKETS
 
 
-static void ServeClient(const SOCKET s_client, const DWORD RpcAssocGroup)
+static void serveClient(const SOCKET s_client, const DWORD RpcAssocGroup)
 {
 	#ifndef _WIN32 // Standard Posix timeout structure
 
@@ -470,7 +412,7 @@ static void ServeClient(const SOCKET s_client, const DWORD RpcAssocGroup)
 	logger(fIP, connection_type, cAccepted, ipstr);
 	#endif // NO_LOG
 
-	RpcServer(s_client, RpcAssocGroup);
+	rpcServer(s_client, RpcAssocGroup);
 
 	#ifndef NO_LOG
 	logger(fIP, connection_type, cClosed, ipstr);
@@ -506,12 +448,12 @@ static void wait_sem(void)
 #if defined(USE_THREADS) && !defined(NO_SOCKETS)
 
 #if defined(_WIN32) || defined(__CYGWIN__) // Win32 Threads
-static DWORD WINAPI ServeClientThreadProc(PCLDATA clData)
+static DWORD WINAPI serveClientThreadProc(PCLDATA clData)
 #else // Posix threads
-static void *ServeClientThreadProc (PCLDATA clData)
+static void *serveClientThreadProc (PCLDATA clData)
 #endif // Thread proc is identical in WIN32 and Posix threads
 {
-	ServeClient(clData->socket, clData->RpcAssocGroup);
+	serveClient(clData->socket, clData->RpcAssocGroup);
 	free(clData);
 	post_sem();
 
@@ -524,11 +466,11 @@ static void *ServeClientThreadProc (PCLDATA clData)
 #ifndef NO_SOCKETS
 
 #if defined(USE_THREADS) && (defined(_WIN32) || defined(__CYGWIN__)) // Windows Threads
-static int ServeClientAsyncWinThreads(const PCLDATA thr_CLData)
+static int serveClientAsyncWinThreads(const PCLDATA thr_CLData)
 {
 	wait_sem();
 
-	HANDLE h = CreateThread(NULL, 0, (LPTHREAD_START_ROUTINE)ServeClientThreadProc, thr_CLData, 0, NULL);
+	HANDLE h = CreateThread(NULL, 0, (LPTHREAD_START_ROUTINE)serveClientThreadProc, thr_CLData, 0, NULL);
 
 	if (h)
 		CloseHandle(h);
@@ -556,7 +498,7 @@ static int ServeClientAsyncPosixThreads(const PCLDATA thr_CLData)
 	// Must set detached state to avoid memory leak
 	if (pthread_attr_init(&attr) ||
 		pthread_attr_setdetachstate(&attr, PTHREAD_CREATE_DETACHED) ||
-		pthread_create(&p_thr, &attr, (void * (*)(void *))ServeClientThreadProc, thr_CLData))
+		pthread_create(&p_thr, &attr, (void * (*)(void *))serveClientThreadProc, thr_CLData))
 	{
 		socketclose(thr_CLData->socket);
 		free(thr_CLData);
@@ -601,10 +543,11 @@ static int ServeClientAsyncFork(const SOCKET s_client, const DWORD RpcAssocGroup
 	{
 		// Child process
 
-		// Restore default handlers for SIGINT and SIGTERM
+		// Setup a Child Handler for most common termination signals
 		struct sigaction sa;
-		sa.sa_handler = ChildSignalHandler;
+
 		sa.sa_flags   = 0;
+		sa.sa_handler = ChildSignalHandler;
 
 		static int signallist[] = { SIGHUP, SIGINT, SIGTERM, SIGSEGV, SIGILL, SIGFPE, SIGBUS };
 
@@ -614,11 +557,11 @@ static int ServeClientAsyncFork(const SOCKET s_client, const DWORD RpcAssocGroup
 
 			for (i = 0; i < _countof(signallist); i++)
 			{
-				sigaction(signallist[i], &sa, 0);
+				sigaction(signallist[i], &sa, NULL);
 			}
 		}
 
-		ServeClient(s_client, RpcAssocGroup);
+		serveClient(s_client, RpcAssocGroup);
 		post_sem();
 		exit(0);
 	}
@@ -626,7 +569,7 @@ static int ServeClientAsyncFork(const SOCKET s_client, const DWORD RpcAssocGroup
 #endif
 
 
-int ServeClientAsync(const SOCKET s_client, const DWORD RpcAssocGroup)
+int serveClientAsync(const SOCKET s_client, const DWORD RpcAssocGroup)
 {
 	#ifndef USE_THREADS // fork() implementation
 
@@ -643,7 +586,7 @@ int ServeClientAsync(const SOCKET s_client, const DWORD RpcAssocGroup)
 
 		#if defined(_WIN32) || defined (__CYGWIN__) // Windows threads
 
-		return ServeClientAsyncWinThreads(thr_CLData);
+		return serveClientAsyncWinThreads(thr_CLData);
 
 		#else // Posix Threads
 
@@ -663,19 +606,19 @@ int ServeClientAsync(const SOCKET s_client, const DWORD RpcAssocGroup)
 #endif // NO_SOCKETS
 
 
-int RunServer()
+int runServer()
 {
 	DWORD RpcAssocGroup = rand32();
 
 	// If compiled for inetd-only mode just serve the stdin socket
 	#ifdef NO_SOCKETS
-	ServeClient(fileno(stdin), RpcAssocGroup);
+	serveClient(fileno(stdin), RpcAssocGroup);
 	return 0;
 	#else
 	// In inetd mode just handle the stdin socket
 	if (InetdMode)
 	{
-		ServeClient(fileno(stdin), RpcAssocGroup);
+		serveClient(fileno(stdin), RpcAssocGroup);
 		return 0;
 	}
 
@@ -703,7 +646,7 @@ int RunServer()
 		}
 
 		RpcAssocGroup++;
-		ServeClientAsync(s_client, RpcAssocGroup);
+		serveClientAsync(s_client, RpcAssocGroup);
 	}
 	#endif // NO_SOCKETS
 

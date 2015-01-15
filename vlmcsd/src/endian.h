@@ -1,6 +1,11 @@
 #ifndef __endian_h
 #define __endian_h
 
+#ifndef CONFIG
+#define CONFIG "config.h"
+#endif // CONFIG
+#include CONFIG
+
 //
 // Unaligned access
 //

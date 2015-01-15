@@ -1,8 +1,16 @@
 /*
  * Helper functions used by other modules
  */
-
+#ifndef _WIN32
+#include <errno.h>
+#endif // _WIN32
+#include <getopt.h>
+#include <string.h>
+#include <stdlib.h>
+#include <ctype.h>
 #include "helpers.h"
+#include "output.h"
+#include "endian.h"
 
 
 /*
@@ -12,7 +20,7 @@
 
 // Convert one character from UTF-8 to UCS2
 // Returns 0xffff, if utf-8 evaluates to > 0xfffe (outside basic multilingual pane)
-WCHAR utf8_to_ucs2_char (const unsigned char * input, const unsigned char ** end_ptr)
+WCHAR utf8_to_ucs2_char (const unsigned char *input, const unsigned char **end_ptr)
 {
     *end_ptr = input;
     if (input[0] == 0)
@@ -133,7 +141,7 @@ BOOL ucs2_to_utf8(const WCHAR* const ucs2_le, char* utf8, size_t maxucs2, size_t
 
 
 // Checks, whether a string is a valid integer number between min and max. Returns TRUE or FALSE. Puts int value in *value
-BOOL StringToInt(const char *const szValue, const int min, const int max, int *const value)
+BOOL stringToInt(const char *const szValue, const int min, const int max, int *const value)
 {
 	char *nextchar;
 
@@ -151,7 +159,7 @@ BOOL StringToInt(const char *const szValue, const int min, const int max, int *c
 
 
 //Converts a String Guid to a host binary guid in host endianess
-int_fast8_t String2Uuid(const char *const restrict input, GUID *const restrict guid)
+int_fast8_t string2Uuid(const char *const restrict input, GUID *const restrict guid)
 {
 	int i;
 
@@ -171,10 +179,10 @@ int_fast8_t String2Uuid(const char *const restrict input, GUID *const restrict g
 	strncpy(inputCopy, input, GUID_STRING_LENGTH + 1);
 	inputCopy[8] = inputCopy[13] = inputCopy[18] = 0;
 
-	Hex2bin((BYTE*)&guid->Data1, inputCopy, 8);
-	Hex2bin((BYTE*)&guid->Data2, inputCopy + 9, 4);
-	Hex2bin((BYTE*)&guid->Data3, inputCopy + 14, 4);
-	Hex2bin(guid->Data4, input + 19, 16);
+	hex2bin((BYTE*)&guid->Data1, inputCopy, 8);
+	hex2bin((BYTE*)&guid->Data2, inputCopy + 9, 4);
+	hex2bin((BYTE*)&guid->Data3, inputCopy + 14, 4);
+	hex2bin(guid->Data4, input + 19, 16);
 
 	guid->Data1 =  BE32(guid->Data1);
 	guid->Data2 =  BE16(guid->Data2);
@@ -198,11 +206,11 @@ void LEGUID(GUID *const restrict out, const GUID* const restrict in)
 
 
 //Checks a command line argument if it is numeric and between min and max. Returns the numeric value or exits on error
-__pure int GetOptionArgumentInt(const char o, const int min, const int max)
+__pure int getOptionArgumentInt(const char o, const int min, const int max)
 {
 	int result;
 
-	if (!StringToInt(optarg, min, max, &result))
+	if (!stringToInt(optarg, min, max, &result))
 	{
 		printerrorf("Fatal: Option \"-%c\" must be numeric between %i and %i.\n", o, min, max);
 		exit(!0);
@@ -212,9 +220,8 @@ __pure int GetOptionArgumentInt(const char o, const int min, const int max)
 }
 
 
-
 // Resets getopt() to start parsing from the beginning
-void OptReset(void)
+void optReset(void)
 {
 	#if defined(__BSD__) || defined(__APPLE__) || defined(__FreeBSD__) || defined(__NetBSD__) || defined(__DragonFly__) || defined(__OpenBSD__)
 	optind = 1;
@@ -245,7 +252,7 @@ char* win_strerror(const int message)
 
 
 // Initialize random generator (needs to be done in each thread)
-void RandomNumberInit()
+void randomNumberInit()
 {
 	struct timeval tv;
 	gettimeofday(&tv, NULL);

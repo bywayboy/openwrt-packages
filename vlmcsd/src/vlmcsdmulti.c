@@ -8,9 +8,10 @@
 #include <stdio.h>
 
 #include "types.h"
-#include "output.h"
+#include "shared_globals.h"
 #include "vlmcsd.h"
 #include "vlmcs.h"
+#include "output.h"
 
 #if (defined(_WIN32) || defined(__CYGWIN__))
 #define compare strcasecmp // Best for case-preserving (but otherwise case-insensitive) filesystems
@@ -20,6 +21,9 @@
 
 int main(int argc, CARGV argv)
 {
+	multi_argv = argv;
+	multi_argc = argc;
+
 	if (!compare(basename((char*)*argv), "vlmcsd"))
 		return server_main(argc, argv);
 

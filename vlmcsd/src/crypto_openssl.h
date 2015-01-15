@@ -1,6 +1,11 @@
 #ifndef __crypto_openssl_h
 #define __crypto_openssl_h
 
+#ifndef CONFIG
+#define CONFIG "config.h"
+#endif // CONFIG
+#include CONFIG
+
 #include <openssl/opensslv.h>
 #include <openssl/sha.h>
 #include <openssl/hmac.h>

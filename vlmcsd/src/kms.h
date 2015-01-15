@@ -1,8 +1,13 @@
 #ifndef __kms_h
 #define __kms_h
 
-#include "sys/time.h"
-#include "vlmcsd.h"
+#ifndef CONFIG
+#define CONFIG "config.h"
+#endif // CONFIG
+#include CONFIG
+
+#include <sys/time.h>
+#include <stdlib.h>
 #include "types.h"
 //
 // REQUEST... types are actually fixed size
@@ -147,7 +152,7 @@ typedef union
 	};
 } RESPONSE_RESULT;
 
-typedef BYTE HWID[8];
+typedef BYTE hwid_t[8];
 
 typedef struct
 {
@@ -192,17 +197,17 @@ size_t CreateResponseV4(REQUEST_V4 *const Request, BYTE *const response_data);
 size_t CreateResponseV6(REQUEST_V6 *restrict Request, BYTE *const response_data);
 BYTE *CreateRequestV4(size_t *size, const REQUEST* requestBase);
 BYTE *CreateRequestV6(size_t *size, const REQUEST* requestBase);
-void RandomPidInit();
-void Get16RandomBytes(void* ptr);
-void Hex2bin(BYTE *const bin, const char *hex, const size_t maxbin);
+void randomPidInit();
+void get16RandomBytes(void* ptr);
+void hex2bin(BYTE *const bin, const char *hex, const size_t maxbin);
 RESPONSE_RESULT DecryptResponseV6(RESPONSE_V6* Response_v6, int responseSize, uint8_t* const response, const uint8_t* const request, BYTE* hwid);
 RESPONSE_RESULT DecryptResponseV4(RESPONSE_V4* Response_v4, const int responseSize, uint8_t* const response, const uint8_t* const request);
-void GetUnixTimeAsFileTime(FILETIME *const ts);
-__pure int64_t FileTimeToUnixTime(const FILETIME *const ts);
-const char* GetProductNameHE(const GUID *const guid, const KmsIdList *const List, ProdListIndex_t *const i);
-const char* GetProductNameLE(const GUID *const guid, const KmsIdList *const List, ProdListIndex_t *const i);
-__pure ProdListIndex_t GetExtendedProductListSize();
-__pure ProdListIndex_t GetAppListSize(void);
+void getUnixTimeAsFileTime(FILETIME *const ts);
+__pure int64_t fileTimeToUnixTime(const FILETIME *const ts);
+const char* getProductNameHE(const GUID *const guid, const KmsIdList *const List, ProdListIndex_t *const i);
+const char* getProductNameLE(const GUID *const guid, const KmsIdList *const List, ProdListIndex_t *const i);
+__pure ProdListIndex_t getExtendedProductListSize();
+__pure ProdListIndex_t getAppListSize(void);
 
 extern const KmsIdList ProductList[];
 extern const KmsIdList AppList[];

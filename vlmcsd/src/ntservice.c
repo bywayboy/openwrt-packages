@@ -1,4 +1,7 @@
 #include "ntservice.h"
+#include "shared_globals.h"
+#include "vlmcsd.h"
+#include "output.h"
 
 #ifdef _NTSERVICE
 
@@ -18,7 +21,7 @@ static VOID WINAPI ServiceCtrlHandler(const DWORD dwCtrl)
     	  ReportServiceStatus(SERVICE_STOP_PENDING, NO_ERROR, 0);
 
     	  // Remove PID file and free ressources
-    	  CleanUp();
+    	  cleanup(TRUE);
 
     	  return;
 

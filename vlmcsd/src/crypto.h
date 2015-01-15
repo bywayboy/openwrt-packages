@@ -1,7 +1,11 @@
 #ifndef __crypto_h
 #define __crypto_h
 
-//#include "vlmcsd.h"
+#ifndef CONFIG
+#define CONFIG "config.h"
+#endif // CONFIG
+#include CONFIG
+
 #include "types.h"
 #include <stdio.h>
 #include <stdlib.h>

@@ -11,8 +11,11 @@
 #include "output.h"
 #include "crypto.h"
 #include "endian.h"
+#include "helpers.h"
+#include "network.h"
+#include "shared_globals.h"
 
-static int CheckRpcHeader(const RPC_HEADER *const Header, const BYTE desiredPacketType, const PRINTFUNC p);
+static int checkRpcHeader(const RPC_HEADER *const Header, const BYTE desiredPacketType, const PRINTFUNC p);
 
 ////TODO: Use GUID instead of BYTE[16]
 static const BYTE TransferSyntaxNDR32[] = {
@@ -82,7 +85,7 @@ static void CheckRpcRequest(const RPC_REQUEST *const Request, const unsigned int
 #endif // defined(_PEDANTIC) && !defined(NO_LOG)
 
 
-static unsigned int RpcRequestSize(const RPC_REQUEST *const Request, const unsigned int RequestSize)
+static unsigned int rpcRequestSize(const RPC_REQUEST *const Request, const unsigned int RequestSize)
 {
 	uint_fast8_t  _v;
 	_v = (uint_fast8_t)LE16(((WORD*)Request->Data)[1]) - 4;
@@ -100,7 +103,7 @@ static unsigned int RpcRequestSize(const RPC_REQUEST *const Request, const unsig
 }
 
 
-static int RpcRequest(const RPC_REQUEST *const Request, RPC_RESPONSE *const Response, const DWORD RpcAssocGroup, const SOCKET sock, const unsigned int len)
+static int rpcRequest(const RPC_REQUEST *const Request, RPC_RESPONSE *const Response, const DWORD RpcAssocGroup, const SOCKET sock, const unsigned int len)
 {
 	uint_fast16_t  _v;
 	_v = LE16(((WORD*)Request->Data)[1]) - 4;
@@ -164,8 +167,8 @@ static void CheckRpcBindRequest(const RPC_BIND_REQUEST *const Request, const uns
 
 			if (!IsEqualGUID(&Request->CtxItems[i].InterfaceUUID, InterfaceUuid))
 			{
-				Uuid2StringLE((GUID*)&Request->CtxItems[i].InterfaceUUID, guidBuffer1);
-				Uuid2StringLE((GUID*)InterfaceUuid, guidBuffer2);
+				uuid2StringLE((GUID*)&Request->CtxItems[i].InterfaceUUID, guidBuffer1);
+				uuid2StringLE((GUID*)InterfaceUuid, guidBuffer2);
 				logger("Warning: NDR32 Interface UUID is %s but should be %s.\n", guidBuffer1, guidBuffer2);
 			}
 
@@ -188,7 +191,7 @@ static void CheckRpcBindRequest(const RPC_BIND_REQUEST *const Request, const uns
 //
 // RPC binding handling (server)
 //
-static unsigned int RpcBindSize(const RPC_BIND_REQUEST *const Request, const unsigned int RequestSize)
+static unsigned int rpcBindSize(const RPC_BIND_REQUEST *const Request, const unsigned int RequestSize)
 {
 	if ( RequestSize >= sizeof(RPC_BIND_REQUEST) )
 	{
@@ -207,7 +210,7 @@ static unsigned int RpcBindSize(const RPC_BIND_REQUEST *const Request, const uns
 }
 
 
-static int RpcBind(const RPC_BIND_REQUEST *const Request, RPC_BIND_RESPONSE *const Response, const DWORD RpcAssocGroup, const SOCKET sock, const unsigned int len)
+static int rpcBind(const RPC_BIND_REQUEST *const Request, RPC_BIND_RESPONSE *const Response, const DWORD RpcAssocGroup, const SOCKET sock, const unsigned int len)
 {
 	unsigned int  i, _st = 0;
 
@@ -273,16 +276,16 @@ static const struct {
 	GETRESPONSESIZE_T( GetResponseSize );
 	GETRESPONSE_T( GetResponse );
 } _Actions[] = {
-	{ RPC_PT_BIND_ACK, (GETRESPONSESIZE_T()) RpcBindSize,    (GETRESPONSE_T()) RpcBind    },
-	{ RPC_PT_RESPONSE, (GETRESPONSESIZE_T()) RpcRequestSize, (GETRESPONSE_T()) RpcRequest }
+	{ RPC_PT_BIND_ACK, (GETRESPONSESIZE_T()) rpcBindSize,    (GETRESPONSE_T()) rpcBind    },
+	{ RPC_PT_RESPONSE, (GETRESPONSESIZE_T()) rpcRequestSize, (GETRESPONSE_T()) rpcRequest }
 };
 
 
-void RpcServer(const SOCKET sock, const DWORD RpcAssocGroup)
+void rpcServer(const SOCKET sock, const DWORD RpcAssocGroup)
 {
 	RPC_HEADER  _Header;
 
-	RandomNumberInit();
+	randomNumberInit();
 
 	while (_recv(sock, &_Header, sizeof(_Header)))
 	{
@@ -290,7 +293,7 @@ void RpcServer(const SOCKET sock, const DWORD RpcAssocGroup)
 		BYTE  *_Request /* =  NULL */; //uncomment to avoid false warnings when compiling with -Og
 
 		#if defined(_PEDANTIC) && !defined(NO_LOG)
-		CheckRpcHeader(&_Header, _Header.PacketType, &logger);
+		checkRpcHeader(&_Header, _Header.PacketType, &logger);
 		#endif // defined(_PEDANTIC) && !defined(NO_LOG)
 
 		switch (_Header.PacketType)
@@ -343,7 +346,7 @@ static DWORD CallId = 2; // M$ starts with CallId 2. So we do the same.
 
 
 // Check RPC Header (check to be performed with any received header: request and response)
-static int CheckRpcHeader(const RPC_HEADER *const Header, const BYTE desiredPacketType, const PRINTFUNC p)
+static int checkRpcHeader(const RPC_HEADER *const Header, const BYTE desiredPacketType, const PRINTFUNC p)
 {
 	int status = 0;
 
@@ -392,9 +395,9 @@ static int CheckRpcHeader(const RPC_HEADER *const Header, const BYTE desiredPack
 
 
 // Check Header of RPC Response
-static int CheckRpcHeaders(const RPC_HEADER *const ResponseHeader, const RPC_HEADER *const RequestHeader, const BYTE desiredPacketType, const PRINTFUNC p)
+static int checkRpcHeaders(const RPC_HEADER *const ResponseHeader, const RPC_HEADER *const RequestHeader, const BYTE desiredPacketType, const PRINTFUNC p)
 {
-	int status = CheckRpcHeader(ResponseHeader, desiredPacketType, p);
+	int status = checkRpcHeader(ResponseHeader, desiredPacketType, p);
 
 	if (desiredPacketType == RPC_PT_BIND_ACK)
 	{
@@ -425,7 +428,7 @@ static int CheckRpcHeaders(const RPC_HEADER *const ResponseHeader, const RPC_HEA
 }
 
 
-static void CreateRpcRequestHeader(RPC_HEADER* RequestHeader, BYTE packetType, WORD size)
+static void createRpcRequestHeader(RPC_HEADER* RequestHeader, BYTE packetType, WORD size)
 {
 	RequestHeader->PacketType 			= packetType;
 	RequestHeader->PacketFlags 			= RPC_PF_FIRST | RPC_PF_LAST;
@@ -438,7 +441,7 @@ static void CreateRpcRequestHeader(RPC_HEADER* RequestHeader, BYTE packetType, W
 }
 
 
-int RpcSendRequest(const SOCKET sock, const BYTE *const KmsRequest, const size_t requestSize, BYTE **KmsResponse, size_t *const responseSize)
+int rpcSendRequest(const SOCKET sock, const BYTE *const KmsRequest, const size_t requestSize, BYTE **KmsResponse, size_t *const responseSize)
 {
 	#define MAX_EXCESS_BYTES 16
 	RPC_HEADER *RequestHeader, ResponseHeader;
@@ -455,7 +458,7 @@ int RpcSendRequest(const SOCKET sock, const BYTE *const KmsRequest, const size_t
 	RequestHeader = (RPC_HEADER*)_Request;
 	RpcRequest = (RPC_REQUEST*)(_Request + sizeof(RPC_HEADER));
 
-	CreateRpcRequestHeader(RequestHeader, RPC_PT_REQUEST, size);
+	createRpcRequestHeader(RequestHeader, RPC_PT_REQUEST, size);
 
 	// Increment CallId for next Request
 	CallId++;
@@ -486,7 +489,7 @@ int RpcSendRequest(const SOCKET sock, const BYTE *const KmsRequest, const size_t
 			break;
 		}
 
-		if ((status = CheckRpcHeaders(&ResponseHeader, RequestHeader, RPC_PT_RESPONSE, &errorout))) break;
+		if ((status = checkRpcHeaders(&ResponseHeader, RequestHeader, RPC_PT_RESPONSE, &errorout))) break;
 
 		if (!_recv(sock, &_Response, sizeof(_Response)))
 		{
@@ -585,7 +588,7 @@ int RpcSendRequest(const SOCKET sock, const BYTE *const KmsRequest, const size_t
 }
 
 
-int RpcBindClient(const SOCKET sock)
+int rpcBindClient(const SOCKET sock)
 {
 	RPC_HEADER *RequestHeader, ResponseHeader;
 	RPC_BIND_REQUEST *bindRequest;
@@ -598,7 +601,7 @@ int RpcBindClient(const SOCKET sock)
 	RequestHeader = (RPC_HEADER*)_Request;
 	bindRequest = (RPC_BIND_REQUEST* )(_Request + sizeof(RPC_HEADER));
 
-	CreateRpcRequestHeader(RequestHeader, RPC_PT_BIND_REQ, SIZE);
+	createRpcRequestHeader(RequestHeader, RPC_PT_BIND_REQ, SIZE);
 	RequestHeader->PacketFlags |=  UseMultiplexedRpc ? RPC_PF_MULTIPLEX : 0;
 
 	bindRequest->AssocGroup		= 0;
@@ -626,7 +629,7 @@ int RpcBindClient(const SOCKET sock)
 		return !0;
 	}
 
-	if ((status = CheckRpcHeaders(&ResponseHeader, RequestHeader, RPC_PT_BIND_ACK, &errorout))) return status;
+	if ((status = checkRpcHeaders(&ResponseHeader, RequestHeader, RPC_PT_BIND_ACK, &errorout))) return status;
 
 	if (!(bindResponse = (RPC_BIND_RESPONSE*)malloc(LE16(ResponseHeader.FragLength) - sizeof(RPC_HEADER))))
 	{

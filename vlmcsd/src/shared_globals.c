@@ -8,21 +8,26 @@ char *fn_ini = NULL;
 #endif
 
 const char *defaultport = "1688";
-int global_argc;
-CARGV global_argv;
-const char* const optstring = "m:t:w:0:3:H:A:R:u:g:L:p:i:P:l:r:U:W:C:SsfeDd46VvId";
+int global_argc, multi_argc = 0;
+CARGV global_argv, multi_argv = NULL;
 const char *const Version = VERSION;
 DWORD ActivationInterval = 60 * 2;   // 2 hours
 DWORD RenewalInterval = 60 * 24 * 7; // 7 days
 int_fast8_t UseMultiplexedRpc = TRUE;
 int_fast8_t DisconnectImmediately = FALSE;
 DWORD ServerTimeout = 30;
+const char *const cIPv4 = "IPv4";
+const char *const cIPv6 = "IPv6";
 
 KmsResponseParam_t KmsResponseParameters[MAX_KMSAPPS];
 
 #if !defined(NO_LIMIT) && !defined (NO_SOCKETS)
 int32_t MaxTasks = SEM_VALUE_MAX;
 #endif // !defined(NO_LIMIT) && !defined (NO_SOCKETS)
+
+#if !defined(NO_SOCKETS) && !defined(NO_SIGHUP) && !defined(_WIN32)
+int_fast8_t IsRestarted = FALSE;
+#endif // !defined(NO_SOCKETS) && !defined(NO_SIGHUP) && !defined(_WIN32)
 
 #ifndef NO_LOG
 char *fn_log = NULL;
@@ -64,10 +69,10 @@ int_fast8_t IsNTService = TRUE;
 int_fast8_t ServiceShutdown = FALSE;
 #endif // _NTSERVICE
 
-#ifndef _WIN32
+/*#ifndef _WIN32
 gid_t gid = INVALID_GID;
 uid_t uid = INVALID_UID;
-#endif
+#endif*/
 
 #ifndef NO_LOG
 #ifdef USE_THREADS
@@ -79,11 +84,6 @@ CRITICAL_SECTION logmutex;
 #endif // USE_THREADS
 #endif // NO_LOG
 
-#ifndef _WIN32
-#ifdef USE_THREADS
-pthread_rwlock_t SighupLock = PTHREAD_RWLOCK_INITIALIZER;
-#endif // USE_THREADS
-#endif // _WIN32
 
 
 
