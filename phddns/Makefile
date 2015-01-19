@@ -1,12 +1,13 @@
 include $(TOPDIR)/rules.mk
 
 PKG_NAME:=phddns
-PKG_VERSION:=2.0.2
-PKG_RELEASE:=16556
+PKG_VERSION:=2.0.6
+PKG_RELEASE:=32828
 
 
-PKG_SOURCE:=$(PKG_NAME)-$(PKG_VERSION).$(PKG_RELEASE).tar.gz
-PKG_SOURCE_URL:=http://download.oray.com/peanuthull
+PKG_SOURCE:=$(PKG_NAME)-sdk-$(PKG_VERSION).$(PKG_RELEASE).tar.gz
+PKG_SOURCE_URL:=http://download.oray.com/peanuthull/
+#http://download.oray.com/peanuthull/phddns-sdk-2.0.6.32828.tar.gz
 
 PKG_BUILD_DIR:=$(BUILD_DIR)/$(PKG_NAME)-$(PKG_VERSION).$(PKG_RELEASE)
 PKG_INSTALL_DIR:=$(PKG_BUILD_DIR)/ipkg-install

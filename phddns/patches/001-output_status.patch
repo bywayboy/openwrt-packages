@@ -1,40 +1,9 @@
-diff -uNr a/src/log.c b/src/log.c
---- a/src/log.c	2011-08-25 12:53:21.000000000 +0800
-+++ b/src/log.c	2014-10-06 17:44:38.886948237 +0800
-@@ -36,25 +36,12 @@
- void log_open(const char *file, int level)
- {
- 	logLevel = level;
--
--	if (logFile)
--		log_close();
--
--	if (file && *file)
--		logFile = fopen(file, "a+");
--	if (!logFile) 
--	{
--		logFile = stderr;
--		if (file && *file)
--			LOG(1) ("Error open log file: %s\n", file);
--	}
--	//for test only!!!
--	//logFile = stderr;
-+	logFile = stdout;
- }
- 
- void log_close()
- {
--	if (logFile && logFile != stderr) {
-+	if (logFile && logFile != stdout) {
- 		fclose(logFile);
- 		logFile = NULL;
- 	}
 diff -uNr a/src/main.c b/src/main.c
---- a/src/main.c	2011-08-25 12:47:47.000000000 +0800
-+++ b/src/main.c	2014-10-06 21:04:51.377178276 +0800
+--- a/src/main.c	2014-04-09 10:15:25.000000000 +0800
++++ b/src/main.c	2015-01-19 21:54:21.414173886 +0800
 @@ -9,18 +9,17 @@
- #include <netdb.h>
- #include <unistd.h>     /* for close() */
+ #include "log.h"
+ #include "phkey.h"
  
 -static void create_pidfile()
 +static void create_pidfile(PHGlobal * gl)
@@ -56,14 +25,7 @@ diff -uNr a/src/main.c b/src/main.c
      }
  }
  #endif
-@@ -117,13 +116,15 @@
- 	}
- 
- 	log_open( parameter.logfile, 1);	//empty file will cause we printf to stdout
--	//create_pidfile();
- 
- 	global.cbOnStatusChanged = myOnStatusChanged;
- 	global.cbOnDomainRegistered = myOnDomainRegistered;
+@@ -124,6 +123,9 @@
  	global.cbOnUserInfo = myOnUserInfo;
  	global.cbOnAccountDomainInfo = myOnAccountDomainInfo;
  
@@ -71,16 +33,17 @@ diff -uNr a/src/main.c b/src/main.c
 +	create_pidfile(&global);
 +#endif
  	set_default_callback(&global);
- 	//◊¢“‚£°£°£°£°£°£°£°£°£°£°£°£°£°£°£°£°£°£°£°£°£°£°£°£°
- 	//“‘œ¬¡Ω∏ˆ÷µ”√ªßƒ˙¡Ÿ ±≤‚ ‘£®Orayø…ƒ‹ÀÊ ±…æ≥˝ªÚ–ﬁ∏ƒ£©£¨’˝ Ω∑¢≤º«∞«ÎÃÓ–¥ƒ˙µƒ µº ∑÷≈‰÷µ
+ 	#ifdef OFFICIAL_CLIENT
+ 	#include "official/official_key.c"
 diff -uNr a/src/phglobal.c b/src/phglobal.c
---- a/src/phglobal.c	2011-08-23 16:24:12.000000000 +0800
-+++ b/src/phglobal.c	2014-10-07 19:58:49.921816665 +0800
-@@ -12,9 +12,36 @@
+--- a/src/phglobal.c	2013-12-02 12:26:45.000000000 +0800
++++ b/src/phglobal.c	2015-01-19 22:08:09.548027232 +0800
+@@ -12,80 +12,108 @@
  
  #include <time.h>
  
-+static char buf[64] = "";
++
++static const char * pstr = "";
 +static PHGlobal * m_global = NULL;
 +
 +static void write_status_file(char * status)
@@ -107,51 +70,145 @@ diff -uNr a/src/phglobal.c b/src/phglobal.c
 +		fclose(fp);
 +	}
 +}
++
  const char *convert_status_code(int nCode)
  {
--	static char buf[64] = "";
-+	
- 
+-	const char* p = "";
  	switch (nCode)
  	{
-@@ -99,7 +126,8 @@
+ 	case okConnecting:
+-		p = "okConnecting";
++		pstr = "okConnecting";
+ 		break;
+ 	case okConnected:
+-		p = "okConnected";
++		pstr = "okConnected";
+ 		break;
+ 	case okAuthpassed:
+-		p = "okAuthpassed";
++		pstr = "okAuthpassed";
+ 		break;
+ 	case okDomainListed:
+-		p = "okDomainListed";
++		pstr = "okDomainListed";
+ 		break;
+ 	case okDomainsRegistered:
+-		p = "okDomainsRegistered";
++		pstr = "okDomainsRegistered";
+ 		break;
+ 	case okKeepAliveRecved:
+-		p = "okKeepAliveRecved";
++		pstr = "okKeepAliveRecved";
+ 		break;
+ 	case okRetrievingMisc:
+-		p = "okRetrievingMisc";
++		pstr = "okRetrievingMisc";
+ 		break;
+ 	case errorConnectFailed:
+-		p = "errorConnectFailed";
++		pstr = "errorConnectFailed";
+ 		break;
+ 	case errorSocketInitialFailed:
+-		p = "errorSocketInitialFailed";
++		pstr = "errorSocketInitialFailed";
+ 		break;
+ 	case errorAuthFailed:
+-		p = "errorAuthFailed";
++		pstr = "errorAuthFailed";
+ 		break;
+ 	case errorDomainListFailed:
+-		p = "errorDomainListFailed";
++		pstr = "errorDomainListFailed";
+ 		break;
+ 	case errorDomainRegisterFailed:
+-		p = "errorDomainRegisterFailed";
++		pstr = "errorDomainRegisterFailed";
+ 		break;
+ 	case errorUpdateTimeout:
+-		p = "errorUpdateTimeout";
++		pstr = "errorUpdateTimeout";
+ 		break;
+ 	case errorKeepAliveError:
+-		p = "errorKeepAliveError";
++		pstr = "errorKeepAliveError";
+ 		break;
+ 	case errorRetrying:
+-		p = "errorRetrying";
++		pstr = "errorRetrying";
+ 		break;
+ 	case okNormal:
+-		p = "okNormal";
++		pstr = "okNormal";
+ 		break;
+ 	case okNoData:
+-		p = "okNoData";
++		pstr = "okNoData";
+ 		break;
+ 	case okServerER:
+-		p = "okServerER";
++		pstr = "okServerER";
+ 		break;
+ 	case errorOccupyReconnect:
+-		p = "errorOccupyReconnect";
++		pstr = "errorOccupyReconnect";
+ 		break;
+ 	case okRedirecting:
+-		p = "okRedirecting";
++		pstr = "okRedirecting";
+ 		break;
+ 	case errorAuthBusy:
+-		p = "errorAuthBusy";
++		pstr = "errorAuthBusy";
+ 		break;
+ 	case errorStatDetailInfoFailed:
+-		p = "errorAuthBusy";
++		pstr = "errorAuthBusy";
+ 		break;
+ 	}
  
- static void defOnStatusChanged(int status, int data)
+-	return p;
++	return pstr;
+ }
+ 
+ 
+@@ -149,7 +177,9 @@
+ 
+ static void defOnStatusChanged(PHGlobal* global, int status, int data)
  {
 -	printf("defOnStatusChanged %s", convert_status_code(status));
++	//printf("defOnStatusChanged %s", convert_status_code(status));
 +	char * status_str = convert_status_code(status);
 +	printf("defOnStatusChanged %s", status_str);
  	if (status == okKeepAliveRecved)
  	{
  		printf(", IP: %d", data);
-@@ -108,6 +136,8 @@
+@@ -158,6 +188,7 @@
  	{
  		printf(", UserType: %d", data);
  	}
-+
 +	write_status_file(status_str);
  	printf("\n");
  }
  
-@@ -128,12 +158,17 @@
- 
- void init_global(PHGlobal *global)
+@@ -180,6 +211,9 @@
  {
+ 	int x = 1;
+ 	char *p = (char *)&x;
++
 +	m_global = global;
 +
-+	
- 	strcpy(global->szHost,"phddns60.oray.net");
- 	strcpy(global->szUserID,"");
- 	strcpy(global->szUserPWD,"");
+ 	if (*p) global->bBigEndian = FALSE;
+ 	else global->bBigEndian = TRUE;
+ 
+@@ -189,6 +223,7 @@
  	strcpy(global->szBindAddress,"");
-+
  	global->nUserType = 0;
  	global->nPort = 6060;
 +	global->pidfilename[0]='\0';
  
  	global->bTcpUpdateSuccessed = FALSE;
  	strcpy(global->szChallenge,"");
-@@ -161,6 +196,14 @@
+@@ -216,6 +251,14 @@
  	global->cbOnAccountDomainInfo = NULL;
  }
  
@@ -167,30 +224,26 @@ diff -uNr a/src/phglobal.c b/src/phglobal.c
  {
  	global->cbOnStatusChanged = defOnStatusChanged;
 diff -uNr a/src/phglobal.h b/src/phglobal.h
---- a/src/phglobal.h	2011-08-23 16:24:12.000000000 +0800
-+++ b/src/phglobal.h	2014-10-06 20:39:08.546208855 +0800
-@@ -185,7 +185,7 @@
- 	int tmLastResponse;
+--- a/src/phglobal.h	2013-12-02 12:26:45.000000000 +0800
++++ b/src/phglobal.h	2015-01-19 22:00:51.609171046 +0800
+@@ -164,6 +164,7 @@
  	int nAddressIndex;
  	char szTcpConnectAddress[32];
--
+ 
 +	char pidfilename[128];
  	int cLastResult;
  	int ip;
  
-@@ -209,5 +209,5 @@
- 
+@@ -192,4 +193,5 @@
  void init_global(PHGlobal *global);
  void set_default_callback(PHGlobal *global);
--
--#endif
-\ Êñá‰ª∂Â∞æÊ≤°Êúâ newline Â≠óÁ¨¶
+ 
 +void free_global(PHGlobal *global);
-+#endif
+ #endif
 diff -uNr a/src/phupdate.c b/src/phupdate.c
---- a/src/phupdate.c	2011-08-23 16:24:12.000000000 +0800
-+++ b/src/phupdate.c	2014-10-06 19:42:24.721280567 +0800
-@@ -499,4 +499,6 @@
+--- a/src/phupdate.c	2013-12-02 12:26:45.000000000 +0800
++++ b/src/phupdate.c	2015-01-19 22:01:39.513109945 +0800
+@@ -602,4 +602,6 @@
  	phglobal->tmLastSend = time(0);
  	sleep(1); //ensure data sent
  	DestroySockets(phglobal);
