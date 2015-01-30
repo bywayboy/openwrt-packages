@@ -1,3 +1,8 @@
+#ifndef CONFIG
+#define CONFIG "config.h"
+#endif // CONFIG
+#include CONFIG
+
 #include "output.h"
 #include "shared_globals.h"
 #include "endian.h"
@@ -124,9 +129,6 @@ static const char *LicenseStatusText[] =
 };
 
 
-#ifndef _PEDANTIC
-static
-#endif // _PEDANTIC
 void uuid2StringLE(const GUID *const guid, char *const string)
 {
 	sprintf(string,
@@ -204,7 +206,11 @@ void logResponseVerbose(const char *const ePID, const BYTE *const hwid, const RE
 	p("Protocol version                : %u.%u\n", (uint32_t)LE16(response->MajorVer), (uint32_t)LE16(response->MinorVer));
 	p("KMS host extended PID           : %s\n", ePID);
 	if (LE16(response->MajorVer) > 5)
-		p("KMS host Hardware ID            : %02X%02X%02X%02X%02X%02X%02X%02X\n", hwid[0], hwid[1], hwid[2], hwid[3], hwid[4], hwid[5], hwid[6], hwid[7]);
+#		ifndef _WIN32
+		p("KMS host Hardware ID            : %016llX\n", (unsigned long long)BE64(*(uint64_t*)hwid));
+#		else // _WIN32
+		p("KMS host Hardware ID            : %016I64X\n", (unsigned long long)BE64(*(uint64_t*)hwid));
+#		endif // WIN32
 
 	uuid2StringLE(&response->ClientMachineId, guidBuffer);
 	p("Client machine ID               : %s\n", guidBuffer);

@@ -1,3 +1,8 @@
+#ifndef CONFIG
+#define CONFIG "config.h"
+#endif // CONFIG
+#include CONFIG
+
 #include "ntservice.h"
 #include "shared_globals.h"
 #include "vlmcsd.h"

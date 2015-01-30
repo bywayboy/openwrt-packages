@@ -1,3 +1,8 @@
+#ifndef CONFIG
+#define CONFIG "config.h"
+#endif // CONFIG
+#include CONFIG
+
 #if !defined(_CRYPTO_OPENSSL) && !defined(_CRYPTO_POLARSSL)
 #include "crypto_internal.h"
 #include "endian.h"

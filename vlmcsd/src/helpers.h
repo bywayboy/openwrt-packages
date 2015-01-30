@@ -24,4 +24,5 @@ BOOL ucs2_to_utf8(const WCHAR* const ucs2_le, char* utf8, size_t maxucs2, size_t
 int_fast8_t string2Uuid(const char *const restrict input, GUID *const restrict guid);
 void randomNumberInit();
 void LEGUID(GUID *const restrict result, const GUID* const restrict guid);
+__noreturn void OutOfMemory(void);
 #endif // HELPERS_H

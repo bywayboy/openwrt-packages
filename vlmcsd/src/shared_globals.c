@@ -1,3 +1,8 @@
+#ifndef CONFIG
+#define CONFIG "config.h"
+#endif // CONFIG
+#include CONFIG
+
 #include "shared_globals.h"
 
 #ifndef NO_PID_FILE
@@ -68,11 +73,6 @@ HANDLE Semaphore;
 int_fast8_t IsNTService = TRUE;
 int_fast8_t ServiceShutdown = FALSE;
 #endif // _NTSERVICE
-
-/*#ifndef _WIN32
-gid_t gid = INVALID_GID;
-uid_t uid = INVALID_UID;
-#endif*/
 
 #ifndef NO_LOG
 #ifdef USE_THREADS

@@ -1,3 +1,12 @@
+#ifndef CONFIG
+#define CONFIG "config.h"
+#endif // CONFIG
+#include CONFIG
+
+#ifndef _GNU_SOURCE
+#define _GNU_SOURCE
+#endif
+
 #include <stdio.h>
 #include <stdlib.h>
 #include <string.h>
@@ -703,13 +712,7 @@ static BOOL readIniFile(const uint_fast8_t pass)
 	FILE *restrict f;
 	BOOL result = TRUE;
 
-	IniFileErrorBuffer = (char*)malloc(INIFILE_ERROR_BUFFERSIZE);
-
-	if (!IniFileErrorBuffer)
-	{
-		printerrorf("Fatal: Cannot allocate memory for ini file error message.\n");
-		exit(!0);
-	}
+	if (!(IniFileErrorBuffer = (char*)malloc(INIFILE_ERROR_BUFFERSIZE))) OutOfMemory();
 
 	if ( !fn_ini || !(f = fopen(fn_ini, "r") )) return FALSE;
 
@@ -837,7 +840,9 @@ static void HangupHandler(const int signal)
 		logger("Fatal: Unable to restart on SIGHUP: %s\n", strerror(errno));
 #	endif
 
-	if (fn_pid) unlink(fn_pid);
+#	ifndef NO_PID_FILE
+		if (fn_pid) unlink(fn_pid);
+#	endif // NO_PID_FILE
 	exit(errno);
 }
 #endif // NO_SIGHUP

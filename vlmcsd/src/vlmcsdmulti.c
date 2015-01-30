@@ -1,5 +1,10 @@
 /* Multi-Call Binary for vlmcs and vlmcsd */
 
+#ifndef CONFIG
+#define CONFIG "config.h"
+#endif // CONFIG
+#include CONFIG
+
 #if MULTI_CALL_BINARY < 1
 #error "Please define MULTI_CALL_BINARY=1 when compiling this file."
 #endif

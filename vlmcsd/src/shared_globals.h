@@ -47,9 +47,6 @@ typedef struct
 	#ifndef NO_LOG
 	const char* EpidSource;
 	#endif // NO_LOG
-	//uint_fast8_t HwIdSource;
-	//uint_fast8_t EpidFromMalloc;
-	//uint_fast8_t HwIdFromMalloc;
 } KmsResponseParam_t, *PKmsResponseParam_t;
 
 #ifndef NO_LIMIT
@@ -136,11 +133,6 @@ extern HANDLE Semaphore;
 extern int_fast8_t IsNTService;
 extern int_fast8_t ServiceShutdown;
 #endif
-
-/*#ifndef _WIN32
-extern gid_t gid;
-extern uid_t uid;
-#endif*/
 
 #ifndef NO_LOG
 #ifdef USE_THREADS

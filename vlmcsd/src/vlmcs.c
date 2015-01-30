@@ -1,3 +1,12 @@
+#ifndef CONFIG
+#define CONFIG "config.h"
+#endif // CONFIG
+#include CONFIG
+
+#ifndef _GNU_SOURCE
+#define _GNU_SOURCE
+#endif
+
 #include "vlmcs.h"
 #include <stdio.h>
 #include <stdlib.h>
@@ -5,6 +14,9 @@
 #include <errno.h>
 #include <stdint.h>
 #include <getopt.h>
+#include <sys/types.h>
+#include <sys/stat.h>
+#include <unistd.h>
 #ifndef _WIN32
 #include <sys/ioctl.h>
 #include <termios.h>
@@ -18,14 +30,19 @@
 #include "rpc.h"
 
 
+#define VLMCS_OPTION_GRAB_INI 1
+#define VLMCS_OPTION_NO_GRAB_INI 2
+
+#define kmsVersionMinor 0 // Currently constant. May change in future KMS versions
+
 // Function Prototypes
-void CreateRequestBase(REQUEST *Request);
+static void CreateRequestBase(REQUEST *Request);
 
 
 // KMS Parameters
-static BOOL verbose = FALSE;
-static BOOL PretendVM = FALSE;
-static BOOL dnsnames = TRUE;
+static int_fast8_t verbose = FALSE;
+static int_fast8_t PretendVM = FALSE;
+static int_fast8_t dnsnames = TRUE;
 static int FixedRequests = 0;
 static BYTE licenseStatus = 0x02;
 static const char *ClientGuid = NULL;
@@ -33,8 +50,12 @@ static const char *WorkstationName = NULL;
 static int GracePeriodRemaining = 43200; //30 days
 static const char *RemoteAddr;
 static int_fast8_t ReconnectForEachRequest = FALSE;
-static WORD kmsVersionMinor = 0;
 static int AddressFamily = AF_UNSPEC;
+static int_fast8_t incompatibleOptions = 0;
+
+#ifndef NO_DNS
+static int_fast8_t NoSrvRecordPriority = FALSE;
+#endif // NO_DNS
 
 
 // Structure for handling "License Packs" (e.g. Office2013v5 or WindowsVista)
@@ -49,30 +70,32 @@ typedef struct
 } LicensePack;
 
 
+typedef char iniFileEpidLines[3][256];
+
 // Well known "license packs"
 static const LicensePack LicensePackList[] =
 {
-	// List of names          min lics version  appID            skuId                                                                                KMSCountedID
-	{ "W6\000Vista\000"
-	  "WindowsVista\000"
-	  "Windows\000",                25,      4, PWINGUID,        { 0x4f3d1606, 0x3fea, 0x4c01, { 0xbe, 0x3c, 0x8d, 0x67, 0x1c, 0x40, 0x1e, 0x3b, } }, { 0x212a64dc, 0x43b1, 0x4d3d, { 0xa3, 0x0c, 0x2f, 0xc6, 0x9d, 0x20, 0x95, 0xc6 } } },
-	{ "W7\000Windows7\000",         25,      4, PWINGUID,        { 0xb92e9980, 0xb9d5, 0x4821, { 0x9c, 0x94, 0x14, 0x0f, 0x63, 0x2f, 0x63, 0x12, } }, { 0x7fde5219, 0xfbfa, 0x484a, { 0x82, 0xc9, 0x34, 0xd1, 0xad, 0x53, 0xe8, 0x56 } } },
-	{ "W8\000Windows8\000",         25,      5, PWINGUID,        { 0xa98bcd6d, 0x5343, 0x4603, { 0x8a, 0xfe, 0x59, 0x08, 0xe4, 0x61, 0x11, 0x12, } }, { 0x3c40b358, 0x5948, 0x45af, { 0x92, 0x3b, 0x53, 0xd2, 0x1f, 0xcc, 0x7e, 0x79 } } },
-	{ "W8C\000Windows8C\000",       25,      5, PWINGUID,        { 0xc04ed6bf, 0x55c8, 0x4b47, { 0x9f, 0x8e, 0x5a, 0x1f, 0x31, 0xce, 0xee, 0x60, } }, { 0xbbb97b3b, 0x8ca4, 0x4a28, { 0x97, 0x17, 0x89, 0xfa, 0xbd, 0x42, 0xc4, 0xac } } },
-	{ "W81\000Windows81\000",       25,      6, PWINGUID,        { 0xc06b6981, 0xd7fd, 0x4a35, { 0xb7, 0xb4, 0x05, 0x47, 0x42, 0xb7, 0xaf, 0x67, } }, { 0xcb8fc780, 0x2c05, 0x495a, { 0x97, 0x10, 0x85, 0xaf, 0xff, 0xc9, 0x04, 0xd7 } } },
-	{ "W81C\000Windows81C\000",     25,      6, PWINGUID,        { 0xfe1c3238, 0x432a, 0x43a1, { 0x8e, 0x25, 0x97, 0xe7, 0xd1, 0xef, 0x10, 0xf3, } }, { 0x6d646890, 0x3606, 0x461a, { 0x86, 0xab, 0x59, 0x8b, 0xb8, 0x4a, 0xce, 0x82 } } },
-	{ "2008" "\0" "2008A\000",       5,      4, PWINGUID,        { 0xddfa9f7c, 0xf09e, 0x40b9, { 0x8c, 0x1a, 0xbe, 0x87, 0x7a, 0x9a, 0x7f, 0x4b, } }, { 0x33e156e4, 0xb76f, 0x4a52, { 0x9f, 0x91, 0xf6, 0x41, 0xdd, 0x95, 0xac, 0x48 } } },
-	{ "2008B\000",                   5,      4, PWINGUID,        { 0xc1af4d90, 0xd1bc, 0x44ca, { 0x85, 0xd4, 0x00, 0x3b, 0xa3, 0x3d, 0xb3, 0xb9, } }, { 0x8fe53387, 0x3087, 0x4447, { 0x89, 0x85, 0xf7, 0x51, 0x32, 0x21, 0x5a, 0xc9 } } },
-	{ "2008C\000",                   5,      4, PWINGUID,        { 0x68b6e220, 0xcf09, 0x466b, { 0x92, 0xd3, 0x45, 0xcd, 0x96, 0x4b, 0x95, 0x09, } }, { 0x8a21fdf3, 0xcbc5, 0x44eb, { 0x83, 0xf3, 0xfe, 0x28, 0x4e, 0x66, 0x80, 0xa7 } } },
-	{ "2008R2" "\0" "2008R2A\000",   5,      4, PWINGUID,        { 0xa78b8bd9, 0x8017, 0x4df5, { 0xb8, 0x6a, 0x09, 0xf7, 0x56, 0xaf, 0xfa, 0x7c, } }, { 0x0fc6ccaf, 0xff0e, 0x4fae, { 0x9d, 0x08, 0x43, 0x70, 0x78, 0x5b, 0xf7, 0xed } } },
-	{ "2008R2B\000",                 5,      4, PWINGUID,        { 0x620e2b3d, 0x09e7, 0x42fd, { 0x80, 0x2a, 0x17, 0xa1, 0x36, 0x52, 0xfe, 0x7a, } }, { 0xca87f5b6, 0xcd46, 0x40c0, { 0xb0, 0x6d, 0x8e, 0xcd, 0x57, 0xa4, 0x37, 0x3f } } },
-	{ "2008R2C\000",                 5,      4, PWINGUID,        { 0x7482e61b, 0xc589, 0x4b7f, { 0x8e, 0xcc, 0x46, 0xd4, 0x55, 0xac, 0x3b, 0x87, } }, { 0xb2ca2689, 0xa9a8, 0x42d7, { 0x93, 0x8d, 0xcf, 0x8e, 0x9f, 0x20, 0x19, 0x58 } } },
-	{ "2012\000",                    5,      5, PWINGUID,        { 0xf0f5ec41, 0x0d55, 0x4732, { 0xaf, 0x02, 0x44, 0x0a, 0x44, 0xa3, 0xcf, 0x0f, } }, { 0x8665cb71, 0x468c, 0x4aa3, { 0xa3, 0x37, 0xcb, 0x9b, 0xc9, 0xd5, 0xea, 0xac } } },
-	{ "2012R2\000" "12R2\000",       5,      6, PWINGUID,        { 0x00091344, 0x1ea4, 0x4f37, { 0xb7, 0x89, 0x01, 0x75, 0x0b, 0xa6, 0x98, 0x8c, } }, { 0x8456EFD3, 0x0C04, 0x4089, { 0x87, 0x40, 0x5b, 0x72, 0x38, 0x53, 0x5a, 0x65 } } },
-	{ "O14\000Office2010\000",       5,      4, POFFICE2010GUID, { 0x6f327760, 0x8c5c, 0x417c, { 0x9b, 0x61, 0x83, 0x6a, 0x98, 0x28, 0x7e, 0x0c, } }, { 0xe85af946, 0x2e25, 0x47b7, { 0x83, 0xe1, 0xbe, 0xbc, 0xeb, 0xea, 0xc6, 0x11 } } },
-	{ "O15\000Office2013\000",       5,      6, POFFICE2013GUID, { 0xb322da9c, 0xa2e2, 0x4058, { 0x9e, 0x4e, 0xf5, 0x9a, 0x69, 0x70, 0xbd, 0x69, } }, { 0xe6a6f1bf, 0x9d40, 0x40c3, { 0xaa, 0x9f, 0xc7, 0x7b, 0xa2, 0x15, 0x78, 0xc0 } } },
-	{ "Office2013V5\000",            5,      5, POFFICE2013GUID, { 0xb322da9c, 0xa2e2, 0x4058, { 0x9e, 0x4e, 0xf5, 0x9a, 0x69, 0x70, 0xbd, 0x69, } }, { 0xe6a6f1bf, 0x9d40, 0x40c3, { 0xaa, 0x9f, 0xc7, 0x7b, 0xa2, 0x15, 0x78, 0xc0 } } },
-	{ NULL, 0, 0, NULL, { 0, 0, 0, { 0, 0, 0, 0, 0, 0, 0, 0 } }, { 0, 0, 0, { 0, 0, 0, 0, 0, 0, 0, 0 } } }
+	// 			 List of names          min lics version  appID            skuId                                                                                KMSCountedID
+	/* 000 */ { "Vista\000W6\000"
+				"WindowsVista\000"
+				"Windows\000",                25,      4, PWINGUID,        { 0x4f3d1606, 0x3fea, 0x4c01, { 0xbe, 0x3c, 0x8d, 0x67, 0x1c, 0x40, 0x1e, 0x3b, } }, { 0x212a64dc, 0x43b1, 0x4d3d, { 0xa3, 0x0c, 0x2f, 0xc6, 0x9d, 0x20, 0x95, 0xc6 } } },
+	/* 001 */ { "W7\000Windows7\000",         25,      4, PWINGUID,        { 0xb92e9980, 0xb9d5, 0x4821, { 0x9c, 0x94, 0x14, 0x0f, 0x63, 0x2f, 0x63, 0x12, } }, { 0x7fde5219, 0xfbfa, 0x484a, { 0x82, 0xc9, 0x34, 0xd1, 0xad, 0x53, 0xe8, 0x56 } } },
+	/* 002 */ { "W8\000Windows8\000",         25,      5, PWINGUID,        { 0xa98bcd6d, 0x5343, 0x4603, { 0x8a, 0xfe, 0x59, 0x08, 0xe4, 0x61, 0x11, 0x12, } }, { 0x3c40b358, 0x5948, 0x45af, { 0x92, 0x3b, 0x53, 0xd2, 0x1f, 0xcc, 0x7e, 0x79 } } },
+	/* 003 */ { "W8C\000Windows8C\000",       25,      5, PWINGUID,        { 0xc04ed6bf, 0x55c8, 0x4b47, { 0x9f, 0x8e, 0x5a, 0x1f, 0x31, 0xce, 0xee, 0x60, } }, { 0xbbb97b3b, 0x8ca4, 0x4a28, { 0x97, 0x17, 0x89, 0xfa, 0xbd, 0x42, 0xc4, 0xac } } },
+	/* 004 */ { "W81\000Windows81\000",       25,      6, PWINGUID,        { 0xc06b6981, 0xd7fd, 0x4a35, { 0xb7, 0xb4, 0x05, 0x47, 0x42, 0xb7, 0xaf, 0x67, } }, { 0xcb8fc780, 0x2c05, 0x495a, { 0x97, 0x10, 0x85, 0xaf, 0xff, 0xc9, 0x04, 0xd7 } } },
+	/* 005 */ { "W81C\000Windows81C\000",     25,      6, PWINGUID,        { 0xfe1c3238, 0x432a, 0x43a1, { 0x8e, 0x25, 0x97, 0xe7, 0xd1, 0xef, 0x10, 0xf3, } }, { 0x6d646890, 0x3606, 0x461a, { 0x86, 0xab, 0x59, 0x8b, 0xb8, 0x4a, 0xce, 0x82 } } },
+	/* 006 */ { "2008" "\0" "2008A\000",       5,      4, PWINGUID,        { 0xddfa9f7c, 0xf09e, 0x40b9, { 0x8c, 0x1a, 0xbe, 0x87, 0x7a, 0x9a, 0x7f, 0x4b, } }, { 0x33e156e4, 0xb76f, 0x4a52, { 0x9f, 0x91, 0xf6, 0x41, 0xdd, 0x95, 0xac, 0x48 } } },
+	/* 007 */ { "2008B\000",                   5,      4, PWINGUID,        { 0xc1af4d90, 0xd1bc, 0x44ca, { 0x85, 0xd4, 0x00, 0x3b, 0xa3, 0x3d, 0xb3, 0xb9, } }, { 0x8fe53387, 0x3087, 0x4447, { 0x89, 0x85, 0xf7, 0x51, 0x32, 0x21, 0x5a, 0xc9 } } },
+	/* 008 */ { "2008C\000",                   5,      4, PWINGUID,        { 0x68b6e220, 0xcf09, 0x466b, { 0x92, 0xd3, 0x45, 0xcd, 0x96, 0x4b, 0x95, 0x09, } }, { 0x8a21fdf3, 0xcbc5, 0x44eb, { 0x83, 0xf3, 0xfe, 0x28, 0x4e, 0x66, 0x80, 0xa7 } } },
+	/* 009 */ { "2008R2" "\0" "2008R2A\000",   5,      4, PWINGUID,        { 0xa78b8bd9, 0x8017, 0x4df5, { 0xb8, 0x6a, 0x09, 0xf7, 0x56, 0xaf, 0xfa, 0x7c, } }, { 0x0fc6ccaf, 0xff0e, 0x4fae, { 0x9d, 0x08, 0x43, 0x70, 0x78, 0x5b, 0xf7, 0xed } } },
+	/* 010 */ { "2008R2B\000",                 5,      4, PWINGUID,        { 0x620e2b3d, 0x09e7, 0x42fd, { 0x80, 0x2a, 0x17, 0xa1, 0x36, 0x52, 0xfe, 0x7a, } }, { 0xca87f5b6, 0xcd46, 0x40c0, { 0xb0, 0x6d, 0x8e, 0xcd, 0x57, 0xa4, 0x37, 0x3f } } },
+	/* 011 */ { "2008R2C\000",                 5,      4, PWINGUID,        { 0x7482e61b, 0xc589, 0x4b7f, { 0x8e, 0xcc, 0x46, 0xd4, 0x55, 0xac, 0x3b, 0x87, } }, { 0xb2ca2689, 0xa9a8, 0x42d7, { 0x93, 0x8d, 0xcf, 0x8e, 0x9f, 0x20, 0x19, 0x58 } } },
+	/* 012 */ { "2012\000",                    5,      5, PWINGUID,        { 0xf0f5ec41, 0x0d55, 0x4732, { 0xaf, 0x02, 0x44, 0x0a, 0x44, 0xa3, 0xcf, 0x0f, } }, { 0x8665cb71, 0x468c, 0x4aa3, { 0xa3, 0x37, 0xcb, 0x9b, 0xc9, 0xd5, 0xea, 0xac } } },
+	/* 013 */ { "2012R2\000" "12R2\000",       5,      6, PWINGUID,        { 0x00091344, 0x1ea4, 0x4f37, { 0xb7, 0x89, 0x01, 0x75, 0x0b, 0xa6, 0x98, 0x8c, } }, { 0x8456EFD3, 0x0C04, 0x4089, { 0x87, 0x40, 0x5b, 0x72, 0x38, 0x53, 0x5a, 0x65 } } },
+	/* 014 */ { "Office2010\000O14\000",       5,      4, POFFICE2010GUID, { 0x6f327760, 0x8c5c, 0x417c, { 0x9b, 0x61, 0x83, 0x6a, 0x98, 0x28, 0x7e, 0x0c, } }, { 0xe85af946, 0x2e25, 0x47b7, { 0x83, 0xe1, 0xbe, 0xbc, 0xeb, 0xea, 0xc6, 0x11 } } },
+	/* 015 */ { "Office2013\000O15\000",       5,      6, POFFICE2013GUID, { 0xb322da9c, 0xa2e2, 0x4058, { 0x9e, 0x4e, 0xf5, 0x9a, 0x69, 0x70, 0xbd, 0x69, } }, { 0xe6a6f1bf, 0x9d40, 0x40c3, { 0xaa, 0x9f, 0xc7, 0x7b, 0xa2, 0x15, 0x78, 0xc0 } } },
+	/* 016 */ { "Office2013V5\000",            5,      5, POFFICE2013GUID, { 0xb322da9c, 0xa2e2, 0x4058, { 0x9e, 0x4e, 0xf5, 0x9a, 0x69, 0x70, 0xbd, 0x69, } }, { 0xe6a6f1bf, 0x9d40, 0x40c3, { 0xaa, 0x9f, 0xc7, 0x7b, 0xa2, 0x15, 0x78, 0xc0 } } },
+	/* 017 */ { NULL, 0, 0, NULL, { 0, 0, 0, { 0, 0, 0, 0, 0, 0, 0, 0 } }, { 0, 0, 0, { 0, 0, 0, 0, 0, 0, 0, 0 } } }
 };
 
 
@@ -118,7 +141,11 @@ __noreturn static void clientUsage(const char* const programName)
 {
 	errorout(
 		"vlmcs %s \n\n"
-		"Usage: %s [options] [<host>[:<port>]] [options]\n\n"
+#		ifndef NO_DNS
+			"Usage: %s [options] [ <host>[:<port>] | .<domain> | - ] [options]\n\n"
+#		else // DNS
+			"Usage: %s [options] [<host>[:<port>]] [options]\n\n"
+#		endif // DNS
 
 		"Options:\n\n"
 
@@ -128,10 +155,9 @@ __noreturn static void clientUsage(const char* const programName)
 		"  -5 Force V5 protocol\n"
 		"  -6 Force V6 protocol\n"
 		"  -i <IpVersion> Use IP protocol (4 or 6)\n"
-		"  -m Pretend to be a virtual machine\n"
 		"  -e Show some valid examples\n"
 		"  -x Show valid Apps\n"
-		"  -d no DNS names, use Netbios names (no effect if -W is used)\n\n"
+		"  -d no DNS names, use Netbios names (no effect if -w is used)\n\n"
 
 		"Advanced options:\n\n"
 
@@ -142,14 +168,22 @@ __noreturn static void clientUsage(const char* const programName)
 		"  -w <Workstation> Use custom workstation name. Default: Use random\n"
 		"  -r <RequiredClientCount> Fake required clients\n"
 		"  -n <Requests> Fixed # of requests (Default: Enough to charge)\n"
+		"  -m Pretend to be a virtual machine\n"
+		"  -G <file> Get ePID/HwId data and write to <file>. Can't be used with -l, -4, -5, -6, -a, -s, -k, -r and -n\n"
 		"  -T Use a new TCP connection for each request.\n"
 		"  -t <LicenseStatus> Use specfic license status (0 <= T <= 6)\n"
 		"  -g <GraceTime> Use specfic grace time in minutes. Default 43200\n"
+#		ifndef NO_DNS
+		"  -P Ignore priority and weight in DNS SRV records\n"
+#		endif // NO_DNS
 		"  -p Don't use multiplexed RPC bind\n\n"
 
-		"<port>:\tTCP port name of the KMS to use. Default 1688.\n"
-		"<host>:\thost name of the KMS to use. Default 127.0.0.1\n"
-		"<app>:\t(Type %s -x to see a list of valid apps)\n\n",
+		"<port>:\t\tTCP port name of the KMS to use. Default 1688.\n"
+		"<host>:\t\thost name of the KMS to use. Default 127.0.0.1\n"
+#		ifndef NO_DNS
+		".<domain>:\tfind KMS server in <domain> via DNS\n"
+#		endif // NO_DNS
+		"<app>:\t\t(Type %s -x to see a list of valid apps)\n\n",
 		Version, programName, programName
 	);
 
@@ -217,13 +251,7 @@ __noreturn static void showProducts(const char* const programName, PRINTFUNC p)
 
 		for (name = lp->names; *name; name += strlen(name) + 1, i++)
 		{
-			uint8_t j;
-			p("%s", name);
-
-			for (j = 0; j < 20 - strlen(name); j++)
-			{
-				p(" ");
-			}
+			p("%-20s", name);
 
 			if (!(i % itemsPerLine)) p("\n");
 		}
@@ -242,6 +270,7 @@ __noreturn static void showProducts(const char* const programName, PRINTFUNC p)
 	for (currentProduct = ExtendedProductList; currentProduct->name; currentProduct++)
 	{
 		uint_fast8_t len = strlen(currentProduct->name);
+
 		if (len > longestString)
 			longestString = len;
 	}
@@ -257,7 +286,9 @@ __noreturn static void showProducts(const char* const programName, PRINTFUNC p)
 		{
 			uint8_t j;
 			uint8_t index = k * lines + i;
+
 			if (index >= items) break;
+
 			p("%3u = %s",  index + 1, ExtendedProductList[index].name);
 
 			for (j = 0; j < longestString + 4 - strlen(ExtendedProductList[index].name); j++)
@@ -368,7 +399,7 @@ static BOOL findLicensePackByName(const char* const name, LicensePack* const lp)
 	#endif // Both Lists are available
 }
 
-static const char* const client_optstring = "+i:l:a:s:k:c:w:r:n:t:g:pTv456mexd";
+static const char* const client_optstring = "+i:l:a:s:k:c:w:r:n:t:g:G:pPTv456mexd";
 
 
 //First pass. We handle only "-l". Since -a -k -s -4 -5 and -6 are exceptions to -l, we process -l first
@@ -419,6 +450,21 @@ static void parseCommandLinePass2(const char *const programName, const int argc,
 
 			#endif // NO_HELP
 
+#			ifndef NO_DNS
+
+			case 'P':
+
+				NoSrvRecordPriority = TRUE;
+				break;
+
+#			endif // NO_DNS
+
+			case 'G':
+
+				incompatibleOptions |= VLMCS_OPTION_GRAB_INI;
+				fn_ini = optarg;
+				break;
+
 			case 'i':
 
 				switch(getOptionArgumentInt(o, 4, 6))
@@ -444,11 +490,13 @@ static void parseCommandLinePass2(const char *const programName, const int argc,
 
 			case 'n': // Fixed number of Requests (regardless, whether they are required)
 
+				incompatibleOptions |= VLMCS_OPTION_NO_GRAB_INI;
 				FixedRequests = getOptionArgumentInt(o, 1, INT_MAX);
 				break;
 
 			case 'r': // Fake minimum required client count
 
+				incompatibleOptions |= VLMCS_OPTION_NO_GRAB_INI;
 				ActiveLicensePack.RequiredClientCount = getOptionArgumentInt(o, 1, INT_MAX);
 				break;
 
@@ -462,13 +510,10 @@ static void parseCommandLinePass2(const char *const programName, const int argc,
 
 			case 'a': // Set specific App Id
 
+				incompatibleOptions |= VLMCS_OPTION_NO_GRAB_INI;
 				ActiveLicensePack.ApplicationID = (GUID*)malloc(sizeof(GUID));
 
-				if (!ActiveLicensePack.ApplicationID)
-				{
-					errorout("Out of memory\n");
-					exit(!0);
-				}
+				if (!ActiveLicensePack.ApplicationID) OutOfMemory();
 
 				string2UuidOrExit(optarg, (GUID*)ActiveLicensePack.ApplicationID);
 				break;
@@ -480,11 +525,13 @@ static void parseCommandLinePass2(const char *const programName, const int argc,
 
 			case 's': // Set specfic SKU ID
 
+				incompatibleOptions |= VLMCS_OPTION_NO_GRAB_INI;
 				string2UuidOrExit(optarg, &ActiveLicensePack.ID);
 				break;
 
 			case 'k': // Set specific KMS ID
 
+				incompatibleOptions |= VLMCS_OPTION_NO_GRAB_INI;
 				string2UuidOrExit(optarg, &ActiveLicensePack.KmsID);
 				break;
 
@@ -492,6 +539,7 @@ static void parseCommandLinePass2(const char *const programName, const int argc,
 			case '5': // Force V5 protocol
 			case '6': // Force V5 protocol
 
+				incompatibleOptions |= VLMCS_OPTION_NO_GRAB_INI;
 				ActiveLicensePack.kmsVersionMajor = o - 0x30;
 				break;
 
@@ -531,12 +579,15 @@ static void parseCommandLinePass2(const char *const programName, const int argc,
 				ReconnectForEachRequest = TRUE;
 				break;
 
-			case 'l': // We already handled /l in the first pass. break; to avoid error
+			case 'l':
+				incompatibleOptions |= VLMCS_OPTION_NO_GRAB_INI;
 				break;
 
 			default:
 				clientUsage(programName);
 	}
+	if ((incompatibleOptions & (VLMCS_OPTION_NO_GRAB_INI | VLMCS_OPTION_GRAB_INI)) == (VLMCS_OPTION_NO_GRAB_INI | VLMCS_OPTION_GRAB_INI))
+		clientUsage(programName);
 }
 
 
@@ -574,7 +625,11 @@ void displayResponse(const RESPONSE_RESULT result, RESPONSE* response, BYTE *hwi
 
 		if (LE16(response->MajorVer) > 5)
 		{
-			printf(" (%02X%02X%02X%02X%02X%02X%02X%02X)", hwid[0], hwid[1], hwid[2], hwid[3], hwid[4], hwid[5], hwid[6], hwid[7]);
+#			ifndef _WIN32
+			printf(" (%016llX)", (unsigned long long)BE64(*(uint64_t*)hwid));
+#			else // _WIN32
+			printf(" (%016I64X)", (unsigned long long)BE64(*(uint64_t*)hwid));
+#			endif // _WIN32
 		}
 
 		printf("\n");
@@ -594,12 +649,15 @@ void displayResponse(const RESPONSE_RESULT result, RESPONSE* response, BYTE *hwi
 
 static void establishRpc(SOCKET *s)
 {
-	*s = connectToAddress(RemoteAddr, AddressFamily);
+#	ifdef NO_DNS
+
+	*s = connectToAddress(RemoteAddr, AddressFamily, FALSE);
 	if (*s == INVALID_SOCKET)
 	{
 		errorout("Fatal: Could not connect to %s\n", RemoteAddr);
 		exit(!0);
 	}
+
 	if (verbose)
 		printf("\nPerforming RPC bind ...\n");
 
@@ -610,6 +668,80 @@ static void establishRpc(SOCKET *s)
 	}
 
 	if (verbose) printf("... successful\n");
+
+#	else // DNS
+
+	static kms_server_dns_ptr* serverlist = NULL;
+	static int numServers = 0;
+	//static int_fast8_t ServerListAlreadyPrinted = FALSE;
+	int i;
+
+	if (!strcmp(RemoteAddr, "-") || *RemoteAddr == '.') // Get KMS server via DNS SRV record
+	{
+		if (!serverlist)
+			numServers = getKmsServerList(&serverlist, RemoteAddr);
+
+		if (numServers < 1)
+		{
+			errorout("Fatal: No KMS servers found\n");
+			exit(!0);
+		}
+
+		if (!NoSrvRecordPriority) sortSrvRecords(serverlist, numServers);
+
+		if (verbose /*&& !ServerListAlreadyPrinted*/)
+		{
+			for (i = 0; i < numServers; i++)
+			{
+				printf(
+						"Found %-40s (priority: %hu, weight: %hu, randomized weight: %i)\n",
+						serverlist[i]->serverName,
+						serverlist[i]->priority, serverlist[i]->weight,
+						NoSrvRecordPriority ? 0 : serverlist[i]->random_weight
+				);
+			}
+
+			printf("\n");
+			//ServerListAlreadyPrinted = TRUE;
+		}
+	}
+	else // Just use the server supplied on the command line
+	{
+		if (!serverlist)
+		{
+			if (!(serverlist = (kms_server_dns_ptr*)malloc(sizeof(kms_server_dns_ptr)))) OutOfMemory();
+
+			*serverlist = (kms_server_dns_ptr)malloc(sizeof(kms_server_dns_t));
+
+			numServers = 1;
+			strncpy((*serverlist)->serverName, RemoteAddr, sizeof((*serverlist)->serverName));
+		}
+	}
+
+	for (i = 0; i < numServers; i++)
+	{
+		*s = connectToAddress(serverlist[i]->serverName, AddressFamily, (*RemoteAddr == '.' || *RemoteAddr == '-'));
+
+		if (*s == INVALID_SOCKET) continue;
+
+		if (verbose)
+			printf("\nPerforming RPC bind ...\n");
+
+		if (rpcBindClient(*s))
+		{
+			errorout("Warning: Could not bind RPC\n");
+			continue;
+		}
+
+		if (verbose) printf("... successful\n");
+
+		return;
+	}
+
+	errorout("Fatal: Could not connect to any KMS server\n");
+	exit(!0);
+
+#	endif // DNS
 }
 
 
@@ -647,6 +779,266 @@ static int SendActivationRequest(const SOCKET sock, RESPONSE *baseResponse, REQU
 	if (response) free(response);
 	free(request);
 	return status;
+}
+
+
+static int sendRequest(SOCKET *const restrict s, REQUEST *const restrict request, RESPONSE *const restrict response, hwid_t hwid, RESPONSE_RESULT *const restrict result)
+{
+	CreateRequestBase(request);
+
+	if (*s == INVALID_SOCKET )
+		establishRpc(s);
+	else
+	{
+		// Check for lame KMS emulators that close the socket after each request
+		int_fast8_t disconnected = isDisconnected(*s);
+
+		if (disconnected)
+			errorout("\nWarning: Server closed RPC connection (probably non-multitasked KMS emulator)\n");
+
+		if (ReconnectForEachRequest || disconnected)
+		{
+			socketclose(*s);
+			establishRpc(s);
+		}
+	}
+
+	printf("Sending activation request (KMS V%u) ", ActiveLicensePack.kmsVersionMajor);
+	fflush(stdout);
+
+	return SendActivationRequest(*s, response, request, result, hwid);
+}
+
+
+static void displayRequestError(SOCKET *const restrict s, const int status, const int currentRequest, const int totalRequests)
+{
+	errorout("\nError 0x%08X while sending request %u of %u\n", status, currentRequest, RequestsToGo + totalRequests);
+
+	switch(status)
+	{
+	case 0xC004F042: // not licensed
+		errorout("The server refused to activate the requested product\n");
+		break;
+
+	case 0x8007000D:  // e.g. v6 protocol on a v5 server
+		errorout("The server didn't understand the request\n");
+		break;
+
+	case 1:
+		errorout("An RPC protocol error has occured\n");
+		socketclose(*s);
+		establishRpc(s);
+		break;
+
+	default:
+		break;
+	}
+}
+
+
+static void newIniBackupFile(const char* const restrict fname)
+{
+	FILE *restrict f = fopen(fname, "wb");
+
+	if (!f)
+	{
+		fprintf(stderr, "Fatal: Cannot create %s: %s\n", fname, strerror(errno));
+		exit(!0);
+	}
+
+	if (fclose(f))
+	{
+		fprintf(stderr, "Fatal: Cannot write to %s: %s\n", fname, strerror(errno));
+		unlink(fname);
+		exit(!0);
+	}
+}
+
+
+static void updateIniFile(iniFileEpidLines* const restrict lines)
+{
+	int_fast8_t lineWritten[_countof(*lines)];
+	struct stat statbuf;
+	uint_fast8_t i;
+	int_fast8_t iniFileExistedBefore = TRUE;
+	unsigned int lineNumber;
+
+	memset(lineWritten, FALSE, sizeof(lineWritten));
+
+	char* restrict fn_bak = (char*)malloc(strlen(fn_ini) + 2);
+
+	if (!fn_bak) OutOfMemory();
+
+	strcpy(fn_bak, fn_ini);
+	strcat(fn_bak, "~");
+
+	if (stat(fn_ini, &statbuf))
+	{
+		if (errno != ENOENT)
+		{
+			fprintf(stderr, "Fatal: %s: %s\n", fn_ini, strerror(errno));
+			exit(!0);
+		}
+		else
+		{
+			iniFileExistedBefore = FALSE;
+			newIniBackupFile(fn_bak);
+		}
+	}
+	else
+	{
+		unlink(fn_bak); // Required for Windows. Most Unix systems don't need it.
+		if (rename(fn_ini, fn_bak))
+		{
+			fprintf(stderr, "Fatal: Cannot create %s: %s\n", fn_bak, strerror(errno));
+			exit(!0);
+		}
+	}
+
+	printf("\n%s file %s\n", iniFileExistedBefore ? "Updating" : "Creating", fn_ini);
+
+	FILE *restrict in, *restrict out;
+
+	in = fopen(fn_bak, "rb");
+
+	if (!in)
+	{
+		fprintf(stderr, "Fatal: Cannot open %s: %s\n", fn_bak, strerror(errno));
+		exit(!0);
+	}
+
+	out = fopen(fn_ini, "wb");
+
+	if (!out)
+	{
+		fprintf(stderr, "Fatal: Cannot create %s: %s\n", fn_ini, strerror(errno));
+		exit(!0);
+	}
+
+	char sourceLine[256];
+
+	for (lineNumber = 1; fgets(sourceLine, sizeof(sourceLine), in); lineNumber++)
+	{
+		for (i = 0; i < _countof(*lines); i++)
+		{
+			if (*(*lines)[i] && !strncasecmp(sourceLine, (*lines)[i], GUID_STRING_LENGTH))
+			{
+				if (lineWritten[i]) break;
+
+				fprintf(out, "%s", (*lines)[i]);
+				printf("line %2i: %s", lineNumber, (*lines)[i]);
+				lineWritten[i] = TRUE;
+				break;
+			}
+		}
+
+		if (i >= _countof(*lines))
+		{
+			fprintf(out, "%s", sourceLine);
+		}
+	}
+
+	if (ferror(in))
+	{
+		fprintf(stderr, "Fatal: Cannot read from %s: %s\n", fn_bak, strerror(errno));
+		exit(!0);
+	}
+
+	fclose(in);
+
+	for (i = 0; i < _countof(*lines); i++)
+	{
+		if (!lineWritten[i] && *(*lines)[i])
+		{
+			fprintf(out, "%s", (*lines)[i]);
+			printf("line %2i: %s", lineNumber + i, (*lines)[i]);
+		}
+	}
+
+	if (fclose(out))
+	{
+		fprintf(stderr, "Fatal: Cannot write to %s: %s\n", fn_ini, strerror(errno));
+		exit(!0);
+	}
+
+	if (!iniFileExistedBefore) unlink(fn_bak);
+
+	free(fn_bak);
+}
+
+static void grabServerData()
+{
+	SOCKET s = INVALID_SOCKET;
+    WORD MajorVer = 6;
+	iniFileEpidLines lines;
+    int_fast8_t Licenses[_countof(lines)] = { 0, 15, 14 };
+    uint_fast8_t i;
+	RESPONSE response;
+	RESPONSE_RESULT result;
+	REQUEST request;
+	hwid_t hwid;
+	int status;
+	size_t len;
+
+	for (i = 0; i < _countof(lines); i++) *lines[i] = 0;
+
+    for (i = 0; i < _countof(Licenses) && MajorVer > 3; i++)
+    {
+    	ActiveLicensePack = LicensePackList[Licenses[i]];
+    	ActiveLicensePack.kmsVersionMajor = MajorVer;
+    	status = sendRequest(&s, &request, &response, hwid, &result);
+    	printf("%-11s", ActiveLicensePack.names);
+
+    	if (status)
+    	{
+    		displayRequestError(&s, status, i + 7 - MajorVer, 9 - MajorVer);
+
+    		if (status == 1) break;
+
+    		if ((status & 0xF0000000) == 0x80000000)
+    		{
+    			MajorVer--;
+    			i--;
+    		}
+
+    		continue;
+    	}
+
+    	printf("%i of %i", (int)(i + 7 - MajorVer), (int)(9 - MajorVer));
+    	displayResponse(result, &response, hwid);
+
+    	char guidBuffer[GUID_STRING_LENGTH + 1];
+    	char ePID[3 * PID_BUFFER_SIZE];
+
+    	uuid2StringLE(&request.AppId, guidBuffer);
+
+    	if (!ucs2_to_utf8(response.KmsPID, ePID, PID_BUFFER_SIZE, 3 * PID_BUFFER_SIZE))
+    	{
+    		memset(ePID + 3 * PID_BUFFER_SIZE - 3, 0, 3);
+    	}
+
+    	snprintf(lines[i], sizeof(lines[0]), "%s = %s", guidBuffer, ePID);
+
+    	if (response.MajorVer > 5)
+    	{
+    		len = strlen(lines[i]);
+    		snprintf (lines[i] + len, sizeof(lines[0]) - len, "/ %02X %02X %02X %02X %02X %02X %02X %02X", hwid[0], hwid[1], hwid[2], hwid[3], hwid[4], hwid[5], hwid[6], hwid[7]);
+    	}
+
+		len = strlen(lines[i]);
+    	snprintf(lines[i] + len, sizeof(lines[0]) - len, "\n");
+
+    }
+
+	if (strcmp(fn_ini, "-"))
+	{
+		updateIniFile(&lines);
+	}
+	else
+	{
+		printf("\n");
+		for (i = 0; i < _countof(lines); i++) printf("%s", lines[i]);
+	}
 }
 
 
@@ -707,97 +1099,59 @@ int client_main(const int argc, CARGV argv)
 	if (useDefaultHost)
 		RemoteAddr = AddressFamily == AF_INET6 ? "::1" : "127.0.0.1";
 
-	SOCKET s = INVALID_SOCKET;
-	RESPONSE response;
-	RESPONSE_RESULT result;
-	int requests;
-
-	for (requests = 0, RequestsToGo = ActiveLicensePack.RequiredClientCount - 1; RequestsToGo; requests++)
+	if (fn_ini != NULL)
+		grabServerData();
+	else
 	{
-		REQUEST request;
-		CreateRequestBase(&request);
-		hwid_t hwid;
-		int status;
+		int requests;
+		SOCKET s = INVALID_SOCKET;
 
-		if (s == INVALID_SOCKET )
-			establishRpc(&s);
-		else
+		for (requests = 0, RequestsToGo = ActiveLicensePack.RequiredClientCount - 1; RequestsToGo; requests++)
 		{
-			// Check for lame KMS emulators that close the socket after each request
-			int_fast8_t disconnected = isDisconnected(s);
+			RESPONSE response;
+			REQUEST request;
+			RESPONSE_RESULT result;
+			hwid_t hwid;
 
-			if (disconnected)
-				errorout("\nWarning: Server closed RPC connection (probably non-multitasked KMS emulator)\n");
+			int status = sendRequest(&s, &request, &response, hwid, &result);
 
-			if (ReconnectForEachRequest || disconnected)
+			if (FixedRequests) RequestsToGo = FixedRequests - requests - 1;
+
+			if (status)
 			{
-				socketclose(s);
-				establishRpc(&s);
+				displayRequestError(&s, status, requests + 1, RequestsToGo + requests + 1);
+				if (!FixedRequests)	RequestsToGo = 0;
 			}
-		}
-
-		printf("Sending activation request (KMS V%u) ", ActiveLicensePack.kmsVersionMajor);
-		fflush(stdout);
-
-		status = SendActivationRequest(s, &response, &request, &result, hwid);
-
-		if (FixedRequests) RequestsToGo = FixedRequests - requests - 1;
-
-		if (status)
-		{
-			errorout("\nError 0x%08X while sending request %u of %u\n", status, requests + 1, RequestsToGo + requests + 1);
-
-			switch(status)
+			else
 			{
-			case 0xC004F042: // not licensed
-				errorout("The server refused to activate the requested product\n");
-				break;
-
-			case 0x8007000D:  // e.g. v6 protocol on a v5 server
-				errorout("The server didn't understand the request\n");
-				break;
-
-			case 1:
-				errorout("An RPC protocol error has occured\n");
-				socketclose(s);
-				establishRpc(&s);
-				break;
-
-			default:
-				break;
-			}
-
-			if (!FixedRequests)
-				RequestsToGo = 0;
-		}
-		else
-		{
-			if (!FixedRequests)
-			{
-				if (firstRequestSent && ActiveLicensePack.RequiredClientCount - (int)response.ActivatedMachines >= RequestsToGo)
+				if (!FixedRequests)
 				{
-					errorout("\nThe KMS server does not increment it's active clients. Aborting...\n");
-					RequestsToGo = 0;
+					if (firstRequestSent && ActiveLicensePack.RequiredClientCount - (int)response.ActivatedMachines >= RequestsToGo)
+					{
+						errorout("\nThe KMS server does not increment it's active clients. Aborting...\n");
+						RequestsToGo = 0;
+					}
+					else
+					{
+						RequestsToGo = ActiveLicensePack.RequiredClientCount - response.ActivatedMachines;
+						if (RequestsToGo < 0) RequestsToGo = 0;
+					}
 				}
-				else
-				{
-					RequestsToGo = ActiveLicensePack.RequiredClientCount - response.ActivatedMachines;
-					if (RequestsToGo < 0) RequestsToGo = 0;
-				}
-			}
 
-			fflush(stderr);
-			printf("%i of %i ", requests + 1, RequestsToGo + requests + 1);
-			displayResponse(result, &response, hwid);
-			firstRequestSent = TRUE;
+				fflush(stderr);
+				printf("%i of %i ", requests + 1, RequestsToGo + requests + 1);
+				displayResponse(result, &response, hwid);
+				firstRequestSent = TRUE;
+			}
 		}
 	}
 
 	return 0;
 }
 
+
 // Create Base KMS Client Request
-void CreateRequestBase(REQUEST *Request)
+static void CreateRequestBase(REQUEST *Request)
 {
 
 	Request->MinorVer = LE16((WORD)kmsVersionMinor);

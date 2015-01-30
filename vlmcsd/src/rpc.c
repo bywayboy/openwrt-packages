@@ -1,3 +1,8 @@
+#ifndef CONFIG
+#define CONFIG "config.h"
+#endif // CONFIG
+#include CONFIG
+
 #include <stdlib.h>
 #include <stdio.h>
 #include <string.h>
@@ -15,13 +20,26 @@
 #include "network.h"
 #include "shared_globals.h"
 
+/* Forwards */
+
 static int checkRpcHeader(const RPC_HEADER *const Header, const BYTE desiredPacketType, const PRINTFUNC p);
 
+
+/* Data definitions */
+
+/*
+ * This is NDR32 transfer syntax GUID. We do not support NDR64.
+ */
 ////TODO: Use GUID instead of BYTE[16]
 static const BYTE TransferSyntaxNDR32[] = {
 	0x04, 0x5D, 0x88, 0x8A, 0xEB, 0x1C, 0xC9, 0x11, 0x9F, 0xE8, 0x08, 0x00, 0x2B, 0x10, 0x48, 0x60
 };
 
+
+/*
+ * This is the interface id for KMS. It is not checked by the server if
+ * _PEDANTIC is not defined.
+ */
 ////TODO: Use GUID instead of BYTE[16]
 static const BYTE InterfaceUuid[] = {
 	0x75, 0x21, 0xc8, 0x51, 0x4e, 0x84, 0x50, 0x47, 0xB0, 0xD8, 0xEC, 0x25, 0x55, 0x55, 0xBC, 0x06
@@ -84,7 +102,10 @@ static void CheckRpcRequest(const RPC_REQUEST *const Request, const unsigned int
 }
 #endif // defined(_PEDANTIC) && !defined(NO_LOG)
 
-
+/*
+ * Returns the maximum number of bytes we support in a KMS reponse or 0 if it isn't KMS v4, v5 or v6.
+ * This is for malloc only. We do not know the actual response size when this function is called.
+ */
 static unsigned int rpcRequestSize(const RPC_REQUEST *const Request, const unsigned int RequestSize)
 {
 	uint_fast8_t  _v;
@@ -103,7 +124,14 @@ static unsigned int rpcRequestSize(const RPC_REQUEST *const Request, const unsig
 }
 
 
-static int rpcRequest(const RPC_REQUEST *const Request, RPC_RESPONSE *const Response, const DWORD RpcAssocGroup, const SOCKET sock, const unsigned int len)
+/*
+ * Handles the actual KMS request from the client.
+ * Calls KMS functions (CreateResponseV4 or CreateResponseV6) in kms.c
+ * Returns size of the KMS response packet or 0 on failure.
+ *
+ * The RPC packet size (excluding header) is actually in Response->AllocHint
+ */
+static int rpcRequest(const RPC_REQUEST *const Request, RPC_RESPONSE *const Response, const DWORD RpcAssocGroup, const SOCKET sock_unused)
 {
 	uint_fast16_t  _v;
 	_v = LE16(((WORD*)Request->Data)[1]) - 4;
@@ -188,9 +216,14 @@ static void CheckRpcBindRequest(const RPC_BIND_REQUEST *const Request, const uns
 }
 #endif // defined(_PEDANTIC) && !defined(NO_LOG)
 
-//
-// RPC binding handling (server)
-//
+
+/*
+ * Calculates the size of an RPC bind response based on a bind request.
+ * We calculate the size first to be able to malloc the exact number of
+ * bytes.
+ *
+ * Returns size of the response or 0 for failure
+ */
 static unsigned int rpcBindSize(const RPC_BIND_REQUEST *const Request, const unsigned int RequestSize)
 {
 	if ( RequestSize >= sizeof(RPC_BIND_REQUEST) )
@@ -210,9 +243,16 @@ static unsigned int rpcBindSize(const RPC_BIND_REQUEST *const Request, const uns
 }
 
 
-static int rpcBind(const RPC_BIND_REQUEST *const Request, RPC_BIND_RESPONSE *const Response, const DWORD RpcAssocGroup, const SOCKET sock, const unsigned int len)
+/*
+ * Accepts a bind request from the client and composes the bind response.
+ * Needs the socket because the tcp port number is part of the response.
+ * len is not used here.
+ *
+ * Returns TRUE on success.
+ */
+static int rpcBind(const RPC_BIND_REQUEST *const Request, RPC_BIND_RESPONSE *const Response, const DWORD RpcAssocGroup, const SOCKET sock)
 {
-	unsigned int  i, _st = 0;
+	unsigned int  i, _st = FALSE;
 
 	for (i = 0; i < LE32(Request->NumCtxItems); i++)
 	{
@@ -222,7 +262,7 @@ static int rpcBind(const RPC_BIND_REQUEST *const Request, RPC_BIND_RESPONSE *con
 			Response->Results[i].AckResult =
 			Response->Results[i].AckReason = 0;
 			memcpy(&Response->Results[i].TransferSyntax, TransferSyntaxNDR32, sizeof(GUID));
-			_st = !0;
+			_st = TRUE;
 		}
 		else
 		{
@@ -239,16 +279,16 @@ static int rpcBind(const RPC_BIND_REQUEST *const Request, RPC_BIND_RESPONSE *con
 		Response->MaxRecvFrag = Request->MaxRecvFrag;
 		Response->AssocGroup  = LE32(RpcAssocGroup);
 
-		socklen_t len;
+		socklen_t socklen;
 		struct sockaddr_storage addr;
 
 		// M$ RPC does not do this. Excess bytes contain apparently random data
 		memset(Response->SecondaryAddress, 0, sizeof(Response->SecondaryAddress));
 
-		len = sizeof addr;
+		socklen = sizeof addr;
 
-		if (getsockname(sock, (struct sockaddr*)&addr, &len) ||
-				getnameinfo((struct sockaddr*)&addr, len, NULL, 0, (char*)Response->SecondaryAddress, sizeof(Response->SecondaryAddress), NI_NUMERICSERV))
+		if (getsockname(sock, (struct sockaddr*)&addr, &socklen) ||
+				getnameinfo((struct sockaddr*)&addr, socklen, NULL, 0, (char*)Response->SecondaryAddress, sizeof(Response->SecondaryAddress), NI_NUMERICSERV))
 		{
 			// In case of failure (should never happen) use default port (doesn't seem to break activation)
 			strcpy((char*)Response->SecondaryAddress, "1688");
@@ -265,11 +305,12 @@ static int rpcBind(const RPC_BIND_REQUEST *const Request, RPC_BIND_RESPONSE *con
 	return _st;
 }
 
+
 //
 // Main RPC handling routine
 //
 #define GETRESPONSESIZE_T(v)  unsigned int (*v)(const void *const , const unsigned int)
-#define GETRESPONSE_T(v)      int (*v)(const void *const , void *, const DWORD, const SOCKET, const unsigned int)
+#define GETRESPONSE_T(v)      int (*v)(const void *const , void *, const DWORD, const SOCKET/*, const unsigned int*/)
 
 static const struct {
 	BYTE  ResponsePacketType;
@@ -281,6 +322,10 @@ static const struct {
 };
 
 
+/*
+ * This is the main RPC server loop. Returns after KMS request has been serviced
+ * or timeout has occured.
+ */
 void rpcServer(const SOCKET sock, const DWORD RpcAssocGroup)
 {
 	RPC_HEADER  _Header;
@@ -312,7 +357,7 @@ void rpcServer(const SOCKET sock, const DWORD RpcAssocGroup)
 						&& ( response_len = _Actions[_a].GetResponseSize(_Request, request_len) )
 						&& (_Response = (BYTE*)malloc( response_len += sizeof(_Header) ))))
 			{
-				if ( (_st = _Actions[_a].GetResponse(_Request, _Response + sizeof(_Header), RpcAssocGroup, sock, request_len)) )
+				if ( (_st = _Actions[_a].GetResponse(_Request, _Response + sizeof(_Header), RpcAssocGroup, sock/*, request_len*/)) )
 				{
 					RPC_HEADER *rh = (RPC_HEADER *)_Response;
 
@@ -342,10 +387,15 @@ void rpcServer(const SOCKET sock, const DWORD RpcAssocGroup)
 }
 
 
+/* RPC client functions */
+
 static DWORD CallId = 2; // M$ starts with CallId 2. So we do the same.
 
 
-// Check RPC Header (check to be performed with any received header: request and response)
+/*
+ * Checks RPC header. Returns 0 on success.
+ * This is mainly for debugging a non Microsoft KMS server that uses its own RPC code.
+ */
 static int checkRpcHeader(const RPC_HEADER *const Header, const BYTE desiredPacketType, const PRINTFUNC p)
 {
 	int status = 0;
@@ -394,8 +444,13 @@ static int checkRpcHeader(const RPC_HEADER *const Header, const BYTE desiredPack
 }
 
 
-// Check Header of RPC Response
-static int checkRpcHeaders(const RPC_HEADER *const ResponseHeader, const RPC_HEADER *const RequestHeader, const BYTE desiredPacketType, const PRINTFUNC p)
+/*
+ * Checks an RPC response header. Does basic header checks by calling checkRpcHeader()
+ * and then does additional checks if response header complies with the respective request header.
+ * PRINTFUNC p can be anything that has the same prototype as printf.
+ * Returns 0 on success.
+ */
+static int checkRpcResponseHeader(const RPC_HEADER *const ResponseHeader, const RPC_HEADER *const RequestHeader, const BYTE desiredPacketType, const PRINTFUNC p)
 {
 	int status = checkRpcHeader(ResponseHeader, desiredPacketType, p);
 
@@ -427,7 +482,10 @@ static int checkRpcHeaders(const RPC_HEADER *const ResponseHeader, const RPC_HEA
 	return status;
 }
 
-
+/*
+ * Initializes an RPC request header as needed for KMS, i.e. packet always fits in one fragment.
+ * size cannot be greater than fragment length negotiated during RPC bind.
+ */
 static void createRpcRequestHeader(RPC_HEADER* RequestHeader, BYTE packetType, WORD size)
 {
 	RequestHeader->PacketType 			= packetType;
@@ -441,6 +499,11 @@ static void createRpcRequestHeader(RPC_HEADER* RequestHeader, BYTE packetType, W
 }
 
 
+/*
+ * Sends a KMS request via RPC and receives a response.
+ * Parameters are raw (encrypted) reqeuests / responses.
+ * Returns 0 on success.
+ */
 int rpcSendRequest(const SOCKET sock, const BYTE *const KmsRequest, const size_t requestSize, BYTE **KmsResponse, size_t *const responseSize)
 {
 	#define MAX_EXCESS_BYTES 16
@@ -489,7 +552,7 @@ int rpcSendRequest(const SOCKET sock, const BYTE *const KmsRequest, const size_t
 			break;
 		}
 
-		if ((status = checkRpcHeaders(&ResponseHeader, RequestHeader, RPC_PT_RESPONSE, &errorout))) break;
+		if ((status = checkRpcResponseHeader(&ResponseHeader, RequestHeader, RPC_PT_RESPONSE, &errorout))) break;
 
 		if (!_recv(sock, &_Response, sizeof(_Response)))
 		{
@@ -528,14 +591,7 @@ int rpcSendRequest(const SOCKET sock, const BYTE *const KmsRequest, const size_t
 			status = !0;
 		}
 
-		*KmsResponse = (BYTE*)malloc(*responseSize + MAX_EXCESS_BYTES);
-
-		if (!*KmsResponse)
-		{
-			errorout("\nFatal: Could not allocate memory for KMS response\n");
-			status = !0;
-			break;
-		}
+		if (!(*KmsResponse = (BYTE*)malloc(*responseSize + MAX_EXCESS_BYTES))) OutOfMemory();
 
 		// If RPC stub is too short, assume missing bytes are zero (same ill behavior as MS RPC)
 		memset(*KmsResponse, 0, *responseSize + MAX_EXCESS_BYTES);
@@ -588,6 +644,11 @@ int rpcSendRequest(const SOCKET sock, const BYTE *const KmsRequest, const size_t
 }
 
 
+/*
+ * Perform RPC client bind. Accepts a connected client socket.
+ * Returns 0 on success. RPC binding is required before any payload can be
+ * exchanged. It negotiates about protocol details.
+ */
 int rpcBindClient(const SOCKET sock)
 {
 	RPC_HEADER *RequestHeader, ResponseHeader;
@@ -629,13 +690,11 @@ int rpcBindClient(const SOCKET sock)
 		return !0;
 	}
 
-	if ((status = checkRpcHeaders(&ResponseHeader, RequestHeader, RPC_PT_BIND_ACK, &errorout))) return status;
+	if ((status = checkRpcResponseHeader(&ResponseHeader, RequestHeader, RPC_PT_BIND_ACK, &errorout)))
+		return status;
 
 	if (!(bindResponse = (RPC_BIND_RESPONSE*)malloc(LE16(ResponseHeader.FragLength) - sizeof(RPC_HEADER))))
-	{
-		errorout("\nFatal: Could not allocate memory for RPC bind response\n");
-		return !0;
-	}
+		OutOfMemory();
 
 	if (!_recv(sock, bindResponse, LE16(ResponseHeader.FragLength) - sizeof(RPC_HEADER)))
 	{

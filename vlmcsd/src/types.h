@@ -6,8 +6,9 @@
 #endif // CONFIG
 #include CONFIG
 
-#include <stdint.h>
+#include <stdlib.h>
 #include <limits.h>
+#include <stdint.h>
 
 #ifdef __sun__
 #include <alloca.h>
@@ -15,10 +16,6 @@
 
 #ifndef __packed
 #define __packed  __attribute__((packed))
-#endif
-
-#ifndef __inline
-#define __inline  __attribute__((always_inline)) inline
 #endif
 
 #ifndef __pure
@@ -95,11 +92,11 @@ typedef uint8_t ProdListIndex_t;
 
 // Stupid MingW just uses rand() from msvcrt.dll which uses RAND_MAX of 0x7fff
 #if RAND_MAX < 0x7fffffff
-#define rand32(x) (((uint32_t)rand(x) << 17) | ((uint32_t)rand(x) << 2) | ((uint32_t)rand(x) & 3))
+#define rand32(x) ((uint32_t)((rand(x) << 17) | (rand(x) << 2) | (rand(x) & 3)))
 #elif RAND_MAX < 0xffffffff
-#define rand32(x) ((rand(x) << 1) | (rand(x) & 1))
+#define rand32(x) ((uint32_t)((rand(x) << 1) | (rand(x) & 1)))
 #else
-#define rand32(x) rand(x)
+#define rand32(x) (uint32_t)rand(x)
 #endif
 
 #if (defined(_WIN32) || defined(__CYGWIN__)) && !defined(NO_SOCKETS)

@@ -19,9 +19,7 @@ void logResponseVerbose(const char *const ePID, const BYTE *const hwid, const RE
 int logger(const char *const fmt, ...);
 #endif //NO_LOG
 
-#ifdef _PEDANTIC
 void uuid2StringLE(const GUID *const guid, char *const string);
-#endif // _PEDANTIC
 
 //void copy_arguments(int argc, char **argv, char ***new_argv);
 //void destroy_arguments(int argc, char **argv);

@@ -1,3 +1,8 @@
+#ifndef CONFIG
+#define CONFIG "config.h"
+#endif // CONFIG
+#include CONFIG
+
 #if defined(_CRYPTO_OPENSSL)
 
 #include "crypto.h"

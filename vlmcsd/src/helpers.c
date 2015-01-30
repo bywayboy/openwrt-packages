@@ -1,6 +1,12 @@
 /*
  * Helper functions used by other modules
  */
+
+#ifndef CONFIG
+#define CONFIG "config.h"
+#endif // CONFIG
+#include CONFIG
+
 #ifndef _WIN32
 #include <errno.h>
 #endif // _WIN32
@@ -260,6 +266,11 @@ void randomNumberInit()
 }
 
 
-
+// We always exit immediately if any OOM condition occurs
+__noreturn void OutOfMemory(void)
+{
+	errorout("Fatal: Out of memory");
+	exit(!0);
+}
 
 

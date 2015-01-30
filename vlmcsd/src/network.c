@@ -1,20 +1,80 @@
+#ifndef CONFIG
+#define CONFIG "config.h"
+#endif // CONFIG
+#include CONFIG
+
 #ifndef _GNU_SOURCE
 #define _GNU_SOURCE
 #endif
 
 #include <string.h>
 #ifndef _WIN32
+#include <signal.h>
 #include <unistd.h>
 #include <fcntl.h>
 #include <errno.h>
-#endif
+//#ifndef DNS_PARSER_INTERNAL
+#if __ANDROID__
+#include <netinet/in.h>
+#include "nameser.h"
+#include "resolv.h"
+#else // other Unix non-Android
+#include <netinet/in.h>
+#include <arpa/nameser.h>
+#include <resolv.h>
+#endif // other Unix non-Android
+//#endif // DNS_PARSER_INTERNAL
+#else // WIN32
+#include <winsock2.h>
+#include <windows.h>
+#include <windns.h>
+#endif // WIN32
 
 #include "network.h"
+#include "endian.h"
 #include "output.h"
 #include "vlmcs.h"
 #include "helpers.h"
 #include "shared_globals.h"
 #include "rpc.h"
+
+#if defined(DNS_PARSER_INTERNAL) && !defined(_WIN32) && !defined(NO_DNS)
+
+#include "ns_name.h"
+#include "ns_parse.h"
+#undef ns_msg
+#undef ns_initparse
+#undef ns_parserr
+#undef ns_rr
+#undef ns_name_uncompress
+#undef ns_msg_base
+#undef ns_msg_end
+#undef ns_rr_rdata
+#undef ns_rr_type
+#undef ns_msg_count
+#undef ns_rr_class
+#undef ns_s_an
+#define ns_msg ns_msg_vlmcsd
+#define ns_initparse ns_initparse_vlmcsd
+#define ns_parserr ns_parserr_vlmcsd
+#define ns_rr ns_rr_vlmcsd
+#define ns_name_uncompress ns_name_uncompress_vlmcsd
+#define ns_msg_base ns_msg_base_vlmcsd
+#define ns_msg_end ns_msg_end_vlmcsd
+#define ns_rr_rdata ns_rr_rdata_vlmcsd
+#define ns_rr_type ns_rr_type_vlmcsd
+#define ns_msg_count ns_msg_count_vlmcsd
+#define ns_rr_class ns_rr_class_vlmcsd
+#define ns_s_an ns_s_an_vlmcsd
+
+#ifndef NS_MAXLABEL
+#define NS_MAXLABEL 63
+#endif
+
+#endif // defined(DNS_PARSER_INTERNAL) && !defined(_WIN32)
+
+
+
 
 
 // Send or receive a fixed number of bytes regardless if received in one or more chunks
@@ -140,7 +200,7 @@ int_fast8_t isDisconnected(const SOCKET s)
 
 // Connect to TCP address addr (e.g. "kms.example.com:1688") and return an
 // open socket for the connection if successful or INVALID_SOCKET otherwise
-SOCKET connectToAddress(const char *const addr, const int AddressFamily)
+SOCKET connectToAddress(const char *const addr, const int AddressFamily, int_fast8_t showHostName)
 {
 	struct addrinfo *saList, *sa;
 	SOCKET s = INVALID_SOCKET;
@@ -155,7 +215,11 @@ SOCKET connectToAddress(const char *const addr, const int AddressFamily)
 
 		if (ip2str(szAddr, sizeof(szAddr), sa->ai_addr, sa->ai_addrlen))
 		{
-			printf("Connecting to %s ... ", szAddr);
+			if (showHostName)
+				printf("Connecting to %s (%s) ... ", addr, szAddr);
+			else
+				printf("Connecting to %s ... ", szAddr);
+
 			fflush(stdout);
 		}
 
@@ -200,7 +264,247 @@ SOCKET connectToAddress(const char *const addr, const int AddressFamily)
 }
 
 
+#ifndef NO_DNS
+
+static int kmsServerListCompareFunc1(const void* a, const void* b)
+{
+	if ( !a && !b) return 0;
+	if ( a && !b) return -1;
+	if ( !a && b) return 1;
+
+	int priority_order =  (int)((*(kms_server_dns_ptr*)a)->priority) - ((int)(*(kms_server_dns_ptr*)b)->priority);
+
+	if (priority_order) return priority_order;
+
+	return (int)((*(kms_server_dns_ptr*)b)->random_weight) - ((int)(*(kms_server_dns_ptr*)a)->random_weight);
+}
+
+
+//TODO: move to helpers.c
+static unsigned int isqrt(unsigned int n)
+{
+	unsigned int c = 0x8000;
+	unsigned int g = 0x8000;
+
+	for(;;)
+	{
+		if(g*g > n)
+			g ^= c;
+
+		c >>= 1;
+
+		if(c == 0) return g;
+
+		g |= c;
+	}
+}
+
+
+void sortSrvRecords(kms_server_dns_ptr* serverlist, const int answers)
+{
+	int i;
+
+	for (i = 0; i < answers; i++)
+	{
+		serverlist[i]->random_weight = (rand32() % 256) * isqrt(serverlist[i]->weight * 1000);
+	}
+
+	qsort(serverlist, answers, sizeof(kms_server_dns_ptr), kmsServerListCompareFunc1);
+}
+
+
+#define RECEIVE_BUFFER_SIZE 2048
+#ifndef _WIN32 // UNIX resolver
+
+static int getDnsRawAnswer(const char *restrict query, unsigned char** receive_buffer)
+{
+	if (res_init() < 0)
+	{
+		fprintf(stderr, "Cannot initialize resolver: %s", strerror(errno));
+		return 0;
+	}
+
+	if(!(*receive_buffer = (unsigned char*)malloc(RECEIVE_BUFFER_SIZE))) OutOfMemory();
+
+	int bytes_received;
+
+	if (*query == '.')
+	{
+#		if __ANDROID__ || __GLIBC__ /* including __UCLIBC__*/ || __APPLE__ || __CYGWIN__ || __FreeBSD__ || __NetBSD__ || __DragonFly__ || __OpenBSD__ || __sun__
+			bytes_received = res_querydomain("_vlmcs._tcp", query + 1, ns_c_in,	ns_t_srv, *receive_buffer, RECEIVE_BUFFER_SIZE);
+#		else
+			char* querystring = (char*)alloca(strlen(query) + 12);
+			strcpy(querystring, "_vlmcs._tcp");
+			strcat(querystring, query);
+			bytes_received = res_query(querystring, ns_c_in, ns_t_srv, *receive_buffer, RECEIVE_BUFFER_SIZE);
+#		endif
+	}
+	else
+	{
+		bytes_received = res_search("_vlmcs._tcp", ns_c_in, ns_t_srv, *receive_buffer, RECEIVE_BUFFER_SIZE);
+	}
+
+	if (bytes_received < 0)
+	{
+		fprintf(stderr, "Fatal: DNS query to %s%s failed: %s\n", "_vlmcs._tcp",	*query == '.' ? query : "", hstrerror(h_errno));
+		return 0;
+	}
+
+	return bytes_received;
+}
+
+
+int getKmsServerList(kms_server_dns_ptr** serverlist, const char *restrict query)
+{
+	unsigned char* receive_buffer;
+	*serverlist = NULL;
+
+	int bytes_received = getDnsRawAnswer(query, &receive_buffer);
+
+	if (bytes_received == 0) return 0;
+
+	ns_msg msg;
+
+	if (ns_initparse(receive_buffer, bytes_received, &msg) < 0)
+	{
+		fprintf(stderr, "Fatal: Incorrect DNS response: %s\n", strerror(errno));
+		free(receive_buffer);
+		return 0;
+	}
+
+	uint16_t i, answers = ns_msg_count(msg, ns_s_an);
+	if(!(*serverlist = (kms_server_dns_ptr*)malloc(answers * sizeof(kms_server_dns_ptr)))) OutOfMemory();
+
+	memset(*serverlist, 0, answers * sizeof(kms_server_dns_ptr));
+
+	for (i = 0; i < answers; i++)
+	{
+		ns_rr rr;
+
+		if (ns_parserr(&msg, ns_s_an, i, &rr) < 0)
+		{
+			fprintf(stderr, "Warning: Error in DNS resource record: %s\n", strerror(errno));
+			continue;
+		}
+
+		if (ns_rr_type(rr) != ns_t_srv)
+		{
+			fprintf(stderr, "Warning: DNS server returned non-SRV record\n");
+			continue;
+		}
+
+		if (ns_rr_class(rr) != ns_c_in)
+		{
+			fprintf(stderr, "Warning: DNS server returned non-IN class record\n");
+			continue;
+		}
+
+		dns_srv_record_ptr srvrecord = (dns_srv_record_ptr)ns_rr_rdata(rr);
+		kms_server_dns_ptr kms_server = (kms_server_dns_ptr)malloc(sizeof(kms_server_dns_t));
+
+		if (!kms_server) OutOfMemory();
+
+		(*serverlist)[i] = kms_server;
+
+		if (ns_name_uncompress(ns_msg_base(msg), ns_msg_end(msg), srvrecord->name, kms_server->serverName, NS_MAXLABEL + 1) < 0)
+		{
+			fprintf(stderr, "Warning: No valid DNS name returned in SRV record: %s\n", strerror(errno));
+			continue;
+		}
+
+        sprintf(kms_server->serverName + strlen(kms_server->serverName), ":%hu", GET_UA16BE(&srvrecord->port));
+        kms_server->priority = GET_UA16BE(&srvrecord->priority);
+        kms_server->weight = GET_UA16BE(&srvrecord->weight);
+
+	}
+
+	free(receive_buffer);
+	return answers;
+}
+
+#else // WIN32 (Windows Resolver)
+
+int getKmsServerList(kms_server_dns_ptr** serverlist, const char *const restrict query)
+{
+#	define MAX_DNS_NAME_SIZE 64
+#	define FQDN_QUERY_SIZE (MAX_DNS_NAME_SIZE + 12)
+	*serverlist = NULL;
+	PDNS_RECORD receive_buffer;
+	char dnsDomain[64];
+	char FqdnQuery[76];
+	DWORD size = 64;
+	DNS_STATUS result;
+	int answers = 0;
+	PDNS_RECORD dns_iterator;
+
+	if (*query == '-' && !GetComputerNameExA(ComputerNamePhysicalDnsDomain, dnsDomain, &size))
+	{
+		errorout("Fatal: Could not determine computer's DNS name: %s\n", vlmcsd_strerror(GetLastError()));
+		return 0;
+	}
+
+	if (*query == '-')
+	{
+		strcpy(FqdnQuery, "_vlmcs._tcp.");
+		strncat(FqdnQuery, dnsDomain, size);
+	}
+	else
+	{
+		strcpy(FqdnQuery, "_vlmcs._tcp");
+		strncat(FqdnQuery, query, MAX_DNS_NAME_SIZE);
+	}
+
+	if ((result = DnsQuery_UTF8(FqdnQuery, DNS_TYPE_SRV, 0, NULL, &receive_buffer, NULL)) != 0)
+	{
+		errorout("Fatal: DNS query to %s failed: %s\n", FqdnQuery, vlmcsd_strerror(result));
+		return 0;
+	}
+
+	for (dns_iterator = receive_buffer; dns_iterator; dns_iterator = dns_iterator->pNext)
+	{
+		if (dns_iterator->Flags.S.Section != 1) continue;
+
+		if (dns_iterator->wType != DNS_TYPE_SRV)
+		{
+			errorout("Warning: DNS server returned non-SRV record\n");
+			continue;
+		}
+
+		answers++;
+	}
+
+	if(!(*serverlist = (kms_server_dns_ptr*)malloc(answers * sizeof(kms_server_dns_ptr)))) OutOfMemory();
+
+	for (answers = 0, dns_iterator = receive_buffer; dns_iterator; dns_iterator = dns_iterator->pNext)
+	{
+		if (dns_iterator->wType != DNS_TYPE_SRV) continue;
+
+		kms_server_dns_ptr kms_server = (kms_server_dns_ptr)malloc(sizeof(kms_server_dns_t));
+
+		if (!kms_server) OutOfMemory();
+
+		memset(kms_server, 0, sizeof(kms_server_dns_t));
+
+		snprintf(kms_server->serverName, sizeof(kms_server->serverName), "%s:%hu", dns_iterator->Data.SRV.pNameTarget, dns_iterator->Data.SRV.wPort);
+		kms_server->priority = dns_iterator->Data.SRV.wPriority;
+		kms_server->weight = dns_iterator->Data.SRV.wWeight;
+
+		(*serverlist)[answers++] = kms_server;
+	}
+
+	//sortSrvRecords(*serverlist, answers, NoSrvRecordPriority);
+
+	DnsRecordListFree(receive_buffer, DnsFreeRecordList);
+
+	return answers;
+#	undef MAX_DNS_NAME_SIZE
+#	undef FQDN_QUERY_SIZE
+}
+#endif // _WIN32
+#undef RECEIVE_BUFFER_SIZE
+#endif // NO_DNS
 #ifndef NO_SOCKETS
+
 
 // Create a Listening socket for addrinfo sa and return socket s
 // szHost and szPort are for logging only

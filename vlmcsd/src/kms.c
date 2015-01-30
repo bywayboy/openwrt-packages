@@ -1,3 +1,8 @@
+#ifndef CONFIG
+#define CONFIG "config.h"
+#endif // CONFIG
+#include CONFIG
+
 #include <stdio.h>
 #include <string.h>
 #include <stdint.h>
@@ -23,11 +28,11 @@
 #endif
 
 #ifndef EPID_OFFICE2010
-#define EPID_OFFICE2010 "05426-00096-199-496023-03-1033-9600.0000-3622014"
+#define EPID_OFFICE2010 "06401-00096-199-496023-03-1033-9600.0000-3622014"
 #endif
 
 #ifndef EPID_OFFICE2013
-#define EPID_OFFICE2013 "55041-00206-234-409313-03-1033-9600.0000-3622014"
+#define EPID_OFFICE2013 "06401-00206-234-409313-03-1033-9600.0000-3622014"
 #endif
 
 #ifndef HWID
@@ -251,6 +256,10 @@ __pure int64_t fileTimeToUnixTime(const FILETIME *const ts)
 }
 
 
+/*
+ * Get's a product name with a GUID in host-endian order.
+ * List can be any list defined above.
+ */
 const char* getProductNameHE(const GUID *const guid, const KmsIdList *const List, ProdListIndex_t *const i)
 {
 	for (*i = 0; List[*i].name != NULL; (*i)++)
@@ -264,6 +273,9 @@ const char* getProductNameHE(const GUID *const guid, const KmsIdList *const List
 }
 
 
+/*
+ * same as getProductnameHE except GUID is in little-endian (network) order
+ */
 const char* getProductNameLE(const GUID *const guid, const KmsIdList *const List, ProdListIndex_t *const i)
 {
 	#if __BYTE_ORDER != __LITTLE_ENDIAN
@@ -297,6 +309,9 @@ static char* itoc(char *const c, const int i, uint_fast8_t digits)
 }
 
 
+/*
+ * Generates a random ePID
+ */
 static void generateRandomPid(const int index, char *const szPid, int serverType, int16_t lang)
 {
 	if (serverType < 0 || serverType >= (int)_countof(HostOS))
@@ -331,10 +346,16 @@ static void generateRandomPid(const int index, char *const szPid, int serverType
 	strcat(szPid, itoc(numberBuffer, HostOS[serverType].Build, 0));
 	strcat(szPid, ".0000-");
 
-	time_t minTime = (time_t)1382029200LL; // RelaseDate Win2012R2
+#	define minTime ((time_t)1382029200) // Release Date Win 2012R2
+
 	time_t maxTime, kmsTime;
 	time(&maxTime);
+
+	if (maxTime < minTime) // Just in case the system time is < 10/17/2013 7:00 pm
+		maxTime = (time_t)BUILD_TIME;
+
 	kmsTime = (rand32() % (maxTime - minTime)) + minTime;
+#	undef minTime
 
 	struct tm *pidTime;
 	pidTime = gmtime(&kmsTime);
@@ -343,6 +364,11 @@ static void generateRandomPid(const int index, char *const szPid, int serverType
 	strcat(szPid, itoc(numberBuffer, pidTime->tm_year + 1900, 4));
 }
 
+
+/*
+ * Generates random ePIDs and stores them if not already read from ini file.
+ * For use with randomization level 1
+ */
 void randomPidInit()
 {
 	ProdListIndex_t i;
@@ -370,6 +396,10 @@ void randomPidInit()
 #endif // NO_RANDOM_EPID
 
 
+/*
+ * Converts hex digits to bytes in big-endian order.
+ * Ignores any non-hex characters
+ */
 void hex2bin(BYTE *const bin, const char *hex, const size_t maxbin)
 {
 	static const char *const hexdigits = "0123456789ABCDEF";
@@ -391,6 +421,9 @@ void hex2bin(BYTE *const bin, const char *hex, const size_t maxbin)
 
 
 #ifndef NO_LOG
+/*
+ * Logs a Request
+ */
 static void logRequest(const REQUEST *const Request)
 {
 	const char *productName;
@@ -429,6 +462,9 @@ static void logRequest(const REQUEST *const Request)
 #endif // NO_LOG
 
 
+/*
+ * Converts a utf-8 ePID string to UCS-2 and writes it to a RESPONSE struct
+ */
 static void getEpidFromString(RESPONSE *const Response, const char *const pid)
 {
 	size_t length = utf8_to_ucs2(Response->KmsPID, pid, PID_BUFFER_SIZE, PID_BUFFER_SIZE * 3);
@@ -436,6 +472,9 @@ static void getEpidFromString(RESPONSE *const Response, const char *const pid)
 }
 
 
+/*
+ * get ePID from appropriate source
+ */
 static void getEpid(const REQUEST *const Request, RESPONSE *const Response, const char** EpidSource, const ProdListIndex_t index, BYTE *const HwId)
 {
 	const char* pid;
@@ -505,6 +544,9 @@ static void CheckRequest(const REQUEST *const Request)
 
 
 #ifndef NO_LOG
+/*
+ * Logs the Response
+ */
 static void logResponse(const REQUEST *const Request, const RESPONSE *const Response, const BYTE *const HwId, const char *const EpidSource)
 {
 	char utf8pid[PID_BUFFER_SIZE * 3];
@@ -527,6 +569,10 @@ static void logResponse(const REQUEST *const Request, const RESPONSE *const Resp
 }
 #endif
 
+
+/*
+ * Creates the unencrypted base response
+ */
 static BOOL CreateResponseBase(const REQUEST *const Request, RESPONSE *const Response, BYTE *const HwId)
 {
 	const char* EpidSource;
@@ -561,7 +607,7 @@ static BOOL CreateResponseBase(const REQUEST *const Request, RESPONSE *const Res
 	return !0;
 }
 
-
+////TODO: Move to helpers.c
 void get16RandomBytes(void* ptr)
 {
 	int i;
@@ -573,6 +619,9 @@ void get16RandomBytes(void* ptr)
 #define V4_POST_EPID_SIZE (sizeof(rb->ClientMachineId) + sizeof(rb->TimeStamp) + sizeof(rb->ActivatedMachines) + sizeof(rb->ActivationInterval) + sizeof(rb->RenewalInterval))
 
 
+/*
+ * Creates v4 response
+ */
 size_t CreateResponseV4(REQUEST_V4 *const Request, BYTE *const response_data)
 {
 	RESPONSE_V4 Response;
@@ -607,10 +656,13 @@ __pure static uint64_t TimestampInterval(void *ts)
 }
 
 
+/*
+ * Creates the HMAC for v6
+ */
 static int CreateV6Hmac(RESPONSE_V6 *const Response, const AesCtx *const aes, BYTE *const encrypt_start, const size_t encryptSize, BYTE *const current, int_fast8_t tolerance)
 {
 	BYTE temp[32];
-	#define halfTempSize (sizeof(temp) / 2)
+	#define halfTempSize (sizeof(temp) >> 1)
 	Sha256HmacCtx hmac;
 	uint64_t ts;
 
@@ -640,6 +692,9 @@ static int CreateV6Hmac(RESPONSE_V6 *const Response, const AesCtx *const aes, BY
 #define V6_POST_EPID_SIZE (V5_POST_EPID_SIZE + sizeof(Response.HwId) + sizeof(Response.XorSalts) + sizeof(Response.Hmac))
 
 
+/*
+ * Creates v5 or v6 response
+ */
 size_t CreateResponseV6(REQUEST_V6 *restrict Request, BYTE *const response_data)
 {
 	RESPONSE_V6 Response;
@@ -733,7 +788,7 @@ BYTE *CreateRequestV6(size_t *size, const REQUEST* requestBase)
 {
 	*size = sizeof(REQUEST_V6);
 
-	// Build a Proper KMS Client Request Data
+	// Build a proper KMS Client Request Data
 	BYTE *request = (BYTE *) malloc(sizeof(REQUEST_V6));
 
 	// Temporary Pointer for access to REQUEST_V5 structure
@@ -756,6 +811,9 @@ BYTE *CreateRequestV6(size_t *size, const REQUEST* requestBase)
 }
 
 
+/*
+ * Checks whether Length of ePID is valid
+ */
 static uint8_t checkPidLength(const RESPONSE *const r)
 {
 	unsigned int i;
@@ -772,6 +830,9 @@ static uint8_t checkPidLength(const RESPONSE *const r)
 }
 
 
+/*
+ * "Decrypts" a KMS v4 response. Actually just copies to a fixed size buffer
+ */
 RESPONSE_RESULT DecryptResponseV4(RESPONSE_V4* Response_v4, const int responseSize, uint8_t* const response, const uint8_t* const request)
 {
 	int copySize =
@@ -814,10 +875,14 @@ RESPONSE_RESULT DecryptResponseV4(RESPONSE_V4* Response_v4, const int responseSi
 }
 
 
+/*
+ * Decrypts a KMS v5 or v6 response received from a server.
+ * hwid must supply a valid 16 byte buffer for v6. hwid is ignored in v5
+ */
 RESPONSE_RESULT DecryptResponseV6(RESPONSE_V6* Response_v6, int responseSize, uint8_t* const response, const uint8_t* const request, BYTE* hwid)
 {
 	RESPONSE_RESULT result;
-	result.mask = (DWORD) -1;
+	result.mask = ~0; // Set all bits in the results mask to 1. Assume success first.
 	result.effectiveResponseSize = responseSize;
 
 	int copySize1 =
@@ -890,6 +955,8 @@ RESPONSE_RESULT DecryptResponseV6(RESPONSE_V6* Response_v6, int responseSize, ui
 	memcpy(&Response_v6->ResponseBase.ClientMachineId, response + copySize1, copySize2);
 
 	// Decrypting the response is finished here. Now we check the results for validity
+	// A basic client doesn't need the stuff below this comment but we want to use vlmcs
+	// as a debug tool for KMS emulators.
 
 	REQUEST_V6* request_v6 = (REQUEST_V6*) request;
 	DWORD decryptSize = sizeof(request_v6->Salt) + sizeof(request_v6->RequestBase) + sizeof(request_v6->Pad);
