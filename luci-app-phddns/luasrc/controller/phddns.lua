@@ -14,12 +14,16 @@ function index()
 	if nixio.fs.access("/etc/config/phddns") then
 		page = entry({"admin", "services", "phddns"}, cbi("admin_services/phddns"), _("Oray DDNS"))
 		page.dependent = true
-		
+		entry({"admin", "services", "phddns_status"}, call("action_phddns_status"))
+	end
+
+	if nixio.fs.access("/etc/config/subversion") then
 		page = entry({"admin", "services", "subversion"},cbi("admin_services/subversion"), _("Subversion"))
 		page.dependent = true
-		
-		entry({"admin", "services", "phddns_status"}, call("action_phddns_status"))
+	end
 
+
+	if nixio.fs.access("/etc/config/vlmcsd") then
 		page = entry({"admin", "services", "vlmcsd"},cbi("admin_services/vlmcsd"), _("KMS Server"))
 		page.dependent = true
 	end

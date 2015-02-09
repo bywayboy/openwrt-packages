@@ -9,6 +9,7 @@ SET(CMAKE_SYSTEM_NAME Linux)
 SET(CMAKE_C_FLAGS "-Os -std=gnu99 -pthread -fpic ")
 SET(CMAKE_CXX_FLAGS "-Os -std=gnu++0x -pthread -fpic")
 
+ADD_DEFINITIONS("-DBUILD_TIME")
 SET(SOURCES
 	vlmcsd.c
 	kms.c
