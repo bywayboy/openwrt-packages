@@ -29,13 +29,13 @@ define Package/$(PKG_NAME)/description
  written by Igor Sysoev.
 endef
 
-define Package/nginx/config
+define Package/$(PKG_NAME)/config
   source "$(SOURCE)/Config.in"
 endef
 
 PKG_CONFIG_DEPENDS := \
-	CONFIG_NGINX_STUB_STATUS \
-	CONFIG_NGINX_FLV 
+	CONFIG_TENGINE_STUB_STATUS \
+	CONFIG_TENGINE_FLV 
 
 define Package/nginx/conffiles
 /etc/nginx/
@@ -47,19 +47,27 @@ ADDITIONAL_MODULES:=
 ifeq ($(CONFIG_IPV6),y)
   ADDITIONAL_MODULES += --with-ipv6
 endif
-ifeq ($(CONFIG_NGINX_STUB_STATUS),y)
+ifeq ($(CONFIG_TENGINE_STUB_STATUS),y)
   ADDITIONAL_MODULES += --with-http_stub_status_module
 endif
-ifeq ($(CONFIG_NGINX_FLV),y)
+ifeq ($(CONFIG_TENGINE_FLV),y)
   ADDITIONAL_MODULES += --with-http_flv_module=shared
 endif
-ifeq ($(CONFIG_NGINX_SSL),y)
+ifeq ($(CONFIG_TENGINE_SSL),y)
   ADDITIONAL_MODULES += --with-http_ssl_module
 else
   ADDITIONAL_MODULES += --without-http-cache --without-http_ssl_module
 endif
-ifeq ($(CONFIG_NGINX_DAV),y)
+ifeq ($(CONFIG_TENGINE_DAV),y)
   ADDITIONAL_MODULES += --with-http_dav_module=shared
+endif
+
+ifeq ($(CONFIG_TENGINE_SUB_MODULE),y)
+  ADDITIONAL_MODULES += --with-http_sub_module
+endif
+
+ifneq ($(CONFIG_TENGINE_HTTP_PROXY),y)
+  ADDITIONAL_MODULES += --without-http_proxy_module
 endif
 
 define Build/Configure
@@ -94,7 +102,6 @@ define Build/Configure
 			--without-dso \
 			--without-select_module \
 			--with-poll_module \
-			--without-http_proxy_module \
 			--without-http_empty_gif_module \
 			--without-http_memcached_module \
 			$(ADDITIONAL_MODULES) )
