@@ -102,7 +102,7 @@
 #define __BYTE_ORDER __BIG_ENDIAN
 #endif
 
-#elif defined(__FreeBSD__) || defined(__NetBSD__) || defined(__DragonFly__) || defined(__OpenBSD__)
+#elif __minix__ || defined(__FreeBSD__) || defined(__NetBSD__) || defined(__DragonFly__) || defined(__OpenBSD__)
 
 #include <sys/types.h>
 #include <sys/endian.h>
@@ -234,45 +234,45 @@
 
 #else // ! defined(__BYTE_ORDER)
 
-extern inline void PUT_UAA64BE(void *p, unsigned long long v, unsigned int i);
+extern void PUT_UAA64BE(void *p, unsigned long long v, unsigned int i);
 
-extern inline void PUT_UAA32BE(void *p, unsigned int v, unsigned int i);
+extern void PUT_UAA32BE(void *p, unsigned int v, unsigned int i);
 
-extern inline void PUT_UAA16BE(void *p, unsigned short v, unsigned int i);
-
-
-extern inline void PUT_UAA64LE(void *p, unsigned long long v, unsigned int i);
-
-extern inline void PUT_UAA32LE(void *p, unsigned int v, unsigned int i);
-
-extern inline void PUT_UAA16LE(void *p, unsigned short v, unsigned int i);
+extern void PUT_UAA16BE(void *p, unsigned short v, unsigned int i);
 
 
-extern inline unsigned long long GET_UAA64BE(void *p, unsigned int i);
+extern void PUT_UAA64LE(void *p, unsigned long long v, unsigned int i);
 
-extern inline unsigned int GET_UAA32BE(void *p, unsigned int i);
+extern void PUT_UAA32LE(void *p, unsigned int v, unsigned int i);
 
-extern inline unsigned short GET_UAA16BE(void *p, unsigned int i);
-
-
-extern inline unsigned long long GET_UAA64LE(void *p, unsigned int i);
-
-extern inline unsigned int GET_UAA32LE(void *p, unsigned int i);
-
-extern inline unsigned short GET_UAA16LE(void *p, unsigned int i);
+extern void PUT_UAA16LE(void *p, unsigned short v, unsigned int i);
 
 
-extern inline unsigned short BE16(unsigned short x);
+extern unsigned long long GET_UAA64BE(void *p, unsigned int i);
 
-extern inline unsigned short LE16(unsigned short x);
+extern unsigned int GET_UAA32BE(void *p, unsigned int i);
 
-extern inline unsigned int BE32(unsigned int x);
+extern unsigned short GET_UAA16BE(void *p, unsigned int i);
 
-extern inline unsigned int LE32(unsigned int x);
 
-extern inline unsigned long long BE64(unsigned long long x);
+extern unsigned long long GET_UAA64LE(void *p, unsigned int i);
 
-extern inline unsigned long long LE64(unsigned long long x);
+extern unsigned int GET_UAA32LE(void *p, unsigned int i);
+
+extern unsigned short GET_UAA16LE(void *p, unsigned int i);
+
+
+extern unsigned short BE16(unsigned short x);
+
+extern unsigned short LE16(unsigned short x);
+
+extern unsigned int BE32(unsigned int x);
+
+extern unsigned int LE32(unsigned int x);
+
+extern unsigned long long BE64(unsigned long long x);
+
+extern unsigned long long LE64(unsigned long long x);
 
 #endif // defined(__BYTE_ORDER)
 

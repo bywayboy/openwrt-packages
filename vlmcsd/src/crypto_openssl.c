@@ -19,7 +19,7 @@ int Sha256HmacInit_OpenSSL(HMAC_CTX *c, const void *k, int l)
 	#if OPENSSL_VERSION_NUMBER >= 0x10000000L
 		int result =
 	#else
-		int result = !0;
+		int result = TRUE;
 	#endif
 	HMAC_Init_ex(c, k, l, EVP_sha256(), NULL);
 	return result;
@@ -35,6 +35,27 @@ int Sha256HmacFinish_OpenSSL(HMAC_CTX *c, unsigned char *h, unsigned int *l)
 	HMAC_Final(c, h, l);
 	HMAC_CTX_cleanup(c);
 	return result;
+}
+
+int_fast8_t Sha256Hmac(BYTE* key, BYTE* restrict data, DWORD len, BYTE* restrict hmac)
+{
+	HMAC_CTX Ctx;
+
+#	if OPENSSL_VERSION_NUMBER >= 0x10000000L
+
+	return
+		Sha256HmacInit_OpenSSL(&Ctx, key, 16) &&
+		HMAC_Update(&Ctx, data, len) &&
+		Sha256HmacFinish_OpenSSL(&Ctx, hmac, NULL);
+
+#	else // OpenSSL 0.9.x
+
+	Sha256HmacInit_OpenSSL(&Ctx, key, 16);
+	HMAC_Update(&Ctx, data, len);
+	Sha256HmacFinish_OpenSSL(&Ctx, hmac, NULL);
+	return TRUE;
+
+#	endif
 }
 
 #else // _OPENSSL_NO_HMAC (some routers have OpenSSL without support for HMAC)
@@ -80,6 +101,15 @@ int _Sha256HmacFinish(Sha256HmacCtx *Ctx, BYTE *hmac, void* dummy)
 	SHA256_Update(&Ctx->ShaCtx, Ctx->OPad, sizeof(Ctx->OPad));
 	SHA256_Update(&Ctx->ShaCtx, temp, sizeof(temp));
 	return SHA256_Final(hmac, &Ctx->ShaCtx);
+}
+
+int_fast8_t Sha256Hmac(BYTE* key, BYTE* restrict data, DWORD len, BYTE* restrict hmac)
+{
+	Sha256HmacCtx Ctx;
+	_Sha256HmacInit(&Ctx, key, 16);
+	_Sha256HmacUpdate(&Ctx, data, len);
+	_Sha256HmacFinish(&Ctx, hmac, NULL);
+	return TRUE;
 }
 #endif
 

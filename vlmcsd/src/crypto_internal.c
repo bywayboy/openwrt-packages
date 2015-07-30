@@ -3,7 +3,7 @@
 #endif // CONFIG
 #include CONFIG
 
-#if !defined(_CRYPTO_OPENSSL) && !defined(_CRYPTO_POLARSSL)
+#if !defined(_CRYPTO_OPENSSL) && !defined(_CRYPTO_POLARSSL) && !defined(_CRYPTO_WINDOWS)
 #include "crypto_internal.h"
 #include "endian.h"
 
@@ -42,6 +42,7 @@ static void Sha256Init(Sha256Ctx *Ctx)
 	Ctx->State[7] = 0x5BE0CD19;
 	Ctx->Len = 0;
 }
+
 
 static void Sha256ProcessBlock(Sha256Ctx *Ctx, BYTE *block)
 {
@@ -88,6 +89,7 @@ static void Sha256ProcessBlock(Sha256Ctx *Ctx, BYTE *block)
 	Ctx->State[7] += h;
 }
 
+
 static void Sha256Update(Sha256Ctx *Ctx, BYTE *data, size_t len)
 {
 	unsigned int  b_len = Ctx->Len & 63,
@@ -115,6 +117,7 @@ static void Sha256Update(Sha256Ctx *Ctx, BYTE *data, size_t len)
 	if ( len ) memcpy(Ctx->Buffer, data, len);
 }
 
+
 static void Sha256Finish(Sha256Ctx *Ctx, BYTE *hash)
 {
 	unsigned int  i, b_len = Ctx->Len & 63;
@@ -138,6 +141,7 @@ static void Sha256Finish(Sha256Ctx *Ctx, BYTE *hash)
 
 }
 
+
 void Sha256(BYTE *data, size_t len, BYTE *hash)
 {
 	Sha256Ctx Ctx;
@@ -148,7 +152,7 @@ void Sha256(BYTE *data, size_t len, BYTE *hash)
 }
 
 
-void _Sha256HmacInit(Sha256HmacCtx *Ctx, BYTE *key, size_t klen)
+static void _Sha256HmacInit(Sha256HmacCtx *Ctx, BYTE *key, size_t klen)
 {
 	BYTE  IPad[64];
 	unsigned int  i;
@@ -174,12 +178,14 @@ void _Sha256HmacInit(Sha256HmacCtx *Ctx, BYTE *key, size_t klen)
 	Sha256Update(&Ctx->ShaCtx, IPad, sizeof(IPad));
 }
 
-void _Sha256HmacUpdate(Sha256HmacCtx *Ctx, BYTE *data, size_t len)
+
+static void _Sha256HmacUpdate(Sha256HmacCtx *Ctx, BYTE *data, size_t len)
 {
 	Sha256Update(&Ctx->ShaCtx, data, len);
 }
 
-void _Sha256HmacFinish(Sha256HmacCtx *Ctx, BYTE *hmac)
+
+static void _Sha256HmacFinish(Sha256HmacCtx *Ctx, BYTE *hmac)
 {
 	BYTE  temp[32];
 
@@ -189,4 +195,18 @@ void _Sha256HmacFinish(Sha256HmacCtx *Ctx, BYTE *hmac)
 	Sha256Update(&Ctx->ShaCtx, temp, sizeof(temp));
 	Sha256Finish(&Ctx->ShaCtx, hmac);
 }
+
+
+
+int_fast8_t Sha256Hmac(BYTE* key, BYTE* restrict data, DWORD len, BYTE* restrict hmac)
+{
+	Sha256HmacCtx Ctx;
+	_Sha256HmacInit(&Ctx, key, 16);
+	_Sha256HmacUpdate(&Ctx, data, len);
+	_Sha256HmacFinish(&Ctx, hmac);
+	return TRUE;
+}
+
+
 #endif // No external Crypto
+

@@ -3,6 +3,14 @@
 #endif // CONFIG
 #include CONFIG
 
+#if defined(USE_MSRPC) && !defined(_WIN32) && !defined(__CYGWIN__)
+#error Microsoft RPC is only available on Windows and Cygwin
+#endif
+
+#if defined(NO_SOCKETS) && defined(USE_MSRPC)
+#error Cannot use inetd mode with Microsoft RPC
+#endif
+
 #ifndef _GNU_SOURCE
 #define _GNU_SOURCE
 #endif
@@ -18,14 +26,14 @@
 #include <grp.h>
 #include <sys/types.h>
 
-#ifndef NO_LIMIT
+#if !defined(NO_LIMIT) && !__minix__
 #include <sys/ipc.h>
 #if !__ANDROID__
 #include <sys/shm.h>
-#else
+#else // __ANDROID__
 #include <sys/syscall.h>
-#endif // !__ANDROID__
-#endif // NO_LIMIT
+#endif // __ANDROID__
+#endif // !defined(NO_LIMIT) && !__minix__
 
 #include <sys/wait.h>
 #include <unistd.h>
@@ -50,22 +58,44 @@
 #include "endian.h"
 #include "shared_globals.h"
 #include "output.h"
+#ifndef USE_MSRPC
 #include "network.h"
+#else // USE_MSRPC
+#include "msrpc-server.h"
+#endif // USE_MSRPC
 #include "ntservice.h"
 #include "helpers.h"
 
 
-static const char* const optstring = "m:t:w:0:3:H:A:R:u:g:L:p:i:P:l:r:U:W:C:SsfeDd46VvIdqkZ";
+static const char* const optstring = "N:B:m:t:w:0:3:H:A:R:u:g:L:p:i:P:l:r:U:W:C:SsfeDd46VvIdqkZ";
 
-#ifndef NO_SOCKETS
+#if !defined(NO_SOCKETS)
+#if !defined(USE_MSRPC)
 static uint_fast8_t maxsockets = 0;
 static int_fast8_t haveIPv6Stack = 0;
 static int_fast8_t haveIPv4Stack = 0;
 static int_fast8_t v6required = 0;
 static int_fast8_t v4required = 0;
+#endif // !defined(USE_MSRPC)
+#endif // !defined(NO_SOCKETS)
+
+#ifdef _NTSERVICE
+static int_fast8_t installService = 0;
+static const char *restrict ServiceUser = NULL;
+static const char *restrict ServicePassword = "";
+#endif
+
+#ifndef NO_PID_FILE
+static const char *fn_pid = NULL;
 #endif
 
 #ifndef NO_INI_FILE
+
+#ifdef INI_FILE
+static const char *fn_ini = INI_FILE;
+#else // !INI_FILE
+static const char *fn_ini = NULL;
+#endif // !INI_FILE
 
 static const char* IniFileErrorMessage = "";
 char* IniFileErrorBuffer = NULL;
@@ -77,15 +107,23 @@ static IniFileParameter_t IniFileParameterList[] =
 		{ "RandomizationLevel", INI_PARAM_RANDOMIZATION_LEVEL },
 		{ "LCID", INI_PARAM_LCID },
 #	endif // NO_RANDOM_EPID
-
-#	ifndef NO_SOCKETS
+#	ifdef USE_MSRPC
+		{ "Port", INI_PARAM_PORT },
+#	endif // USE_MSRPC
+#	if !defined(NO_SOCKETS) && !defined(USE_MSRPC)
 		{ "Listen", INI_PARAM_LISTEN },
-#	ifndef NO_LIMIT
+#	if !defined(NO_LIMIT) && !__minix__
 		{ "MaxWorkers", INI_PARAM_MAX_WORKERS },
-#	endif // NO_LIMIT
-#	endif // NO_SOCKETS
+#	endif // !defined(NO_LIMIT) && !__minix__
+#	endif // !defined(NO_SOCKETS) && !defined(USE_MSRPC)
+#	if !defined(NO_TIMEOUT) && !__minix__ && !defined(USE_MSRPC) & !defined(USE_MSRPC)
 		{ "ConnectionTimeout", INI_PARAM_CONNECTION_TIMEOUT },
+#	endif // !defined(NO_TIMEOUT) && !__minix__ && !defined(USE_MSRPC) & !defined(USE_MSRPC)
+#	ifndef USE_MSRPC
 		{ "DisconnectClientsImmediately", INI_PARAM_DISCONNECT_IMMEDIATELY },
+		{ "UseNDR64", INI_PARAM_RPC_NDR64 },
+		{ "UseBTFN", INI_PARAM_RPC_BTFN },
+#	endif // USE_MSRPC
 #	ifndef NO_PID_FILE
 		{ "PIDFile", INI_PARAM_PID_FILE },
 #	endif // NO_PID_FILE
@@ -108,9 +146,9 @@ static IniFileParameter_t IniFileParameterList[] =
 #endif // NO_INI_FILE
 
 
-#if !defined(NO_LIMIT) && !defined (NO_SOCKETS)
+#if !defined(NO_LIMIT) && !defined (NO_SOCKETS) && !__minix__
 
-#if !defined(USE_THREADS) && !defined(CYGWIN)
+#if !defined(USE_THREADS) && !defined(CYGWIN) && !defined(USE_MSRPC)
 static int shmid = -1;
 #endif
 
@@ -146,7 +184,7 @@ static int shmctl(int shmid, int cmd, /*struct shmid_ds*/void *buf)
 
 #endif // __ANDROID__ && !defined(USE_THREADS)
 
-#endif // !defined(NO_LIMIT) && !defined (NO_SOCKETS)
+#endif // !defined(NO_LIMIT) && !defined (NO_SOCKETS) && !__minix__
 
 #ifndef NO_USER_SWITCH
 #ifndef _WIN32
@@ -225,23 +263,27 @@ static __noreturn void usage()
 			"  -g <group>		set gid to <group>\n"
 			#endif // !defined(_WIN32) && !defined(NO_USER_SWITCH)
 			#ifndef NO_RANDOM_EPID
-			"  -r 0|1|2		set ePID randomization level (default 1)\n"
-			"  -C <LCID>		Use fixed <LCID> in random ePIDs\n"
+			"  -r 0|1|2\t\tset ePID randomization level (default 1)\n"
+			"  -C <LCID>\t\tuse fixed <LCID> in random ePIDs\n"
 			#endif // NO_RANDOM_EPID
 			#ifndef NO_SOCKETS
-			"  -4			use IPv4 (no effect if -L is used)\n"
-			"  -6			use IPv6 (no effect if -L is used)\n"
-			"  -P <port>		set TCP port for subsequent -L statements (default 1688)\n"
-			"  -L <address>[:<port>]	listen on IP address <address> with optional <port>\n"
-			#ifndef NO_LIMIT
+			#ifndef USE_MSRPC
+			"  -4\t\t\tuse IPv4\n"
+			"  -6\t\t\tuse IPv6\n"
+			"  -L <address>[:<port>]\tlisten on IP address <address> with optional <port>\n"
+			"  -P <port>\t\tset TCP port <port> for subsequent -L statements (default 1688)\n"
+			#else // USE_MSRPC
+			"  -P <port>\t\tuse TCP port <port> (default 1688)\n"
+			#endif // USE_MSRPC
+			#if !defined(NO_LIMIT) && !__minix__
 			"  -m <clients>\t\tHandle max. <clients> simultaneously (default no limit)\n"
-			#endif // NO_LIMIT
+			#endif // !defined(NO_LIMIT) && !__minix__
 			#ifdef _NTSERVICE
 			"  -s			install vlmcsd as an NT service. Ignores -e"
 			#ifndef _WIN32
 			", -f and -D"
 			#endif // _WIN32
-			". Can't be used with -I\n"
+			"\n"
 			"  -S			remove vlmcsd service. Ignores all other options\n"
 			"  -U <username>		run NT service as <username>. Must be used with -s\n"
 			"  -W <password>		optional <password> for -U. Must be used with -s\n"
@@ -258,9 +300,15 @@ static __noreturn void usage()
 			"\n"
 			#endif // _WIN32
 			#endif // NO_SOCKETS
+			#ifndef USE_MSRPC
+			#if !defined(NO_TIMEOUT) && !__minix__
 			"  -t <seconds>\t\tdisconnect clients after <seconds> of inactivity (default 30)\n"
+			#endif // !defined(NO_TIMEOUT) && !__minix__
 			"  -d\t\t\tdisconnect clients after each request\n"
 			"  -k\t\t\tdon't disconnect clients after each request (default)\n"
+			"  -N0, -N1\t\tdisable/enable NDR64\n"
+			"  -B0, -B1\t\tdisable/enable bind time feature negotiation\n"
+			#endif // USE_MSRPC
 			#ifndef NO_PID_FILE
 			"  -p <file>		write pid to <file>\n"
 			#endif // NO_PID_FILE
@@ -281,17 +329,6 @@ static __noreturn void usage()
 			"  -q\t\t\tdon't log verbose (default)\n"
 			#endif // NO_VERBOSE_LOG
 			#endif // NO_LOG
-			#ifndef _WIN32
-			"  -I			inetd mode"
-			#ifndef NO_SOCKETS
-			". Implies -D. Ignores "
-			#ifndef NO_LIMIT
-			"-m, "
-			#endif // NO_LIMIT
-			"-t, -4, -6, -e, -f, -P and -L"
-			"\n"
-			#endif // NO_SOCKETS
-			#endif // _WIN32
 			"  -V			display version information and exit"
 			"\n",
 			Version, global_argv[0]);
@@ -338,6 +375,7 @@ __pure static DWORD timeSpanString2Minutes(const char *const restrict argument)
 }
 
 
+#ifndef NO_INI_FILE
 __pure static BOOL getTimeSpanFromIniFile(DWORD* result, const char *const restrict argument)
 {
 	DWORD val = timeSpanString2Minutes(argument);
@@ -350,6 +388,7 @@ __pure static BOOL getTimeSpanFromIniFile(DWORD* result, const char *const restr
 	*result = val;
 	return TRUE;
 }
+#endif // NO_INI_FILE
 
 
 __pure static DWORD getTimeSpanFromCommandLine(const char *const restrict optarg, const char optchar)
@@ -386,35 +425,14 @@ static void ignoreIniFileParameter(uint_fast8_t iniFileParameterId)
 
 
 #ifndef NO_INI_FILE
-__pure static BOOL getIniFileArgumentBool(int_fast8_t *result, const char *const argument)
+static BOOL getIniFileArgumentBool(int_fast8_t *result, const char *const argument)
 {
-	if (
-		!strncasecmp(argument, "true", 4) ||
-		!strncasecmp(argument, "on", 4) ||
-		!strncasecmp(argument, "yes", 3) ||
-		!strncasecmp(argument, "1", 1)
-	)
-	{
-		*result = TRUE;
-		return TRUE;
-	}
-	else if (
-			!strncasecmp(argument, "false", 5) ||
-			!strncasecmp(argument, "off", 3) ||
-			!strncasecmp(argument, "no", 2) ||
-			!strncasecmp(argument, "0", 1)
-	)
-	{
-		*result = FALSE;
-		return TRUE;
-	}
-
 	IniFileErrorMessage = "Argument must be true/on/yes/1 or false/off/no/0";
-	return FALSE;
+	return getArgumentBool(result, argument);
 }
 
 
-__pure static BOOL getIniFileArgumentInt(int *result, const char *const argument, const int min, const int max)
+static BOOL getIniFileArgumentInt(int *result, const char *const argument, const int min, const int max)
 {
 	int tempResult;
 
@@ -430,10 +448,10 @@ __pure static BOOL getIniFileArgumentInt(int *result, const char *const argument
 }
 
 
-__pure static char* allocateStringArgument(const char *const argument)
+static char* allocateStringArgument(const char *const argument)
 {
-	char* result = (char*)malloc(strlen(argument) + 1);
-	if (result) strcpy(result, argument);
+	char* result = (char*)vlmcsd_malloc(strlen(argument) + 1);
+	strcpy(result, argument);
 	return result;
 }
 
@@ -489,19 +507,31 @@ static BOOL setIniFileParameter(uint_fast8_t id, const char *const iniarg)
 
 #	endif // NO_RANDOM_EPID
 
-#	ifndef NO_SOCKETS
+#	ifdef USE_MSRPC
+
+		case INI_PARAM_PORT:
+			defaultport = allocateStringArgument(iniarg);
+			break;
+
+#	endif // USE_MSRPC
+
+#	if !defined(NO_SOCKETS) && !defined(USE_MSRPC)
 
 		case INI_PARAM_LISTEN:
 			maxsockets++;
 			return TRUE;
 
-#	ifndef NO_LIMIT
+#	if !defined(NO_LIMIT) && !__minix__
 
 		case INI_PARAM_MAX_WORKERS:
+#			ifdef USE_MSRPC
+			success = getIniFileArgumentInt(&MaxTasks, iniarg, 1, RPC_C_LISTEN_MAX_CALLS_DEFAULT);
+#			else // !USE_MSRPC
 			success = getIniFileArgumentInt(&MaxTasks, iniarg, 1, SEM_VALUE_MAX);
+#			endif // !USE_MSRPC
 			break;
 
-#	endif // NO_LIMIT
+#	endif // !defined(NO_LIMIT) && !__minix__
 #	endif // NO_SOCKETS
 
 #	ifndef NO_PID_FILE
@@ -529,23 +559,39 @@ static BOOL setIniFileParameter(uint_fast8_t id, const char *const iniarg)
 #	ifndef NO_CUSTOM_INTERVALS
 
 		case INI_PARAM_ACTIVATION_INTERVAL:
-			success = getTimeSpanFromIniFile(&ActivationInterval, iniarg);
+			success = getTimeSpanFromIniFile(&VLActivationInterval, iniarg);
 			break;
 
 		case INI_PARAM_RENEWAL_INTERVAL:
-			success = getTimeSpanFromIniFile(&RenewalInterval, iniarg);
+			success = getTimeSpanFromIniFile(&VLRenewalInterval, iniarg);
 			break;
 
 #	endif // NO_CUSTOM_INTERVALS
+
+#	ifndef USE_MSRPC
+
+#	if !defined(NO_TIMEOUT) && !__minix__
 
 		case INI_PARAM_CONNECTION_TIMEOUT:
 			success = getIniFileArgumentInt(&result, iniarg, 1, 600);
 			if (success) ServerTimeout = (DWORD)result;
 			break;
 
+#	endif // !defined(NO_TIMEOUT) && !__minix__
+
 		case INI_PARAM_DISCONNECT_IMMEDIATELY:
 			success = getIniFileArgumentBool(&DisconnectImmediately, iniarg);
 			break;
+
+		case INI_PARAM_RPC_NDR64:
+			success = getIniFileArgumentBool(&UseRpcNDR64, iniarg);
+			break;
+
+		case INI_PARAM_RPC_BTFN:
+			success = getIniFileArgumentBool(&UseRpcBTFN, iniarg);
+			break;
+
+#	endif // USE_MSRPC
 
 		default:
 			return FALSE;
@@ -577,9 +623,7 @@ static BOOL setHwIdFromIniFileLine(const char **s, const ProdListIndex_t index)
 	{
 		if (KmsResponseParameters[index].HwId) return TRUE;
 
-		BYTE* HwId = (BYTE*)malloc(sizeof(((RESPONSE_V6 *)0)->HwId));
-		if (!HwId) return FALSE;
-
+		BYTE* HwId = (BYTE*)vlmcsd_malloc(sizeof(((RESPONSE_V6 *)0)->HwId));
 		hex2bin(HwId, *s + 1, sizeof(((RESPONSE_V6 *)0)->HwId));
 		KmsResponseParameters[index].HwId = HwId;
 	}
@@ -629,9 +673,7 @@ static BOOL setEpidFromIniFileLine(const char **s, const ProdListIndex_t index)
 
 	size_t size = *s - savedPosition + 1;
 
-	char* epidbuffer = (char*)malloc(size);
-	if (!epidbuffer) return FALSE;
-
+	char* epidbuffer = (char*)vlmcsd_malloc(size);
 	memcpy(epidbuffer, savedPosition, size - 1);
 	epidbuffer[size - 1] = 0;
 
@@ -687,7 +729,7 @@ static BOOL handleIniFileParameter(const char *s)
 }
 
 
-#ifndef NO_SOCKETS
+#if !defined(NO_SOCKETS) && !defined(USE_MSRPC)
 static BOOL setupListeningSocketsFromIniFile(const char *s)
 {
 	if (!maxsockets) return TRUE;
@@ -698,7 +740,7 @@ static BOOL setupListeningSocketsFromIniFile(const char *s)
 	IniFileErrorMessage = IniFileErrorBuffer;
 	return addListeningSocket(s);
 }
-#endif // NO_SOCKETS
+#endif // !defined(NO_SOCKETS) && !defined(USE_MSRPC)
 
 
 static BOOL readIniFile(const uint_fast8_t pass)
@@ -712,9 +754,9 @@ static BOOL readIniFile(const uint_fast8_t pass)
 	FILE *restrict f;
 	BOOL result = TRUE;
 
-	if (!(IniFileErrorBuffer = (char*)malloc(INIFILE_ERROR_BUFFERSIZE))) OutOfMemory();
+	IniFileErrorBuffer = (char*)vlmcsd_malloc(INIFILE_ERROR_BUFFERSIZE);
 
-	if ( !fn_ini || !(f = fopen(fn_ini, "r") )) return FALSE;
+	if ( !(f = fopen(fn_ini, "r") )) return FALSE;
 
 	for (lineNumber = 1; (s = fgets(line, sizeof(line), f)); lineNumber++)
 	{
@@ -733,7 +775,7 @@ static BOOL readIniFile(const uint_fast8_t pass)
 					!setEpidFromIniFileLine(&s, appIndex) ||
 					!setHwIdFromIniFileLine(&s, appIndex);
 		}
-#		ifndef NO_SOCKETS
+#		if !defined(NO_SOCKETS) && !defined(USE_MSRPC)
 		else if (pass == INI_FILE_PASS_2)
 		{
 			lineParseError = !setupListeningSocketsFromIniFile(s);
@@ -751,10 +793,23 @@ static BOOL readIniFile(const uint_fast8_t pass)
 		}
 	}
 
-	free(IniFileErrorBuffer);
 	if (ferror(f)) result = FALSE;
 
+	free(IniFileErrorBuffer);
 	fclose(f);
+
+#	if !defined(NO_SOCKETS) && !defined(NO_LOG)
+
+	if (pass == INI_FILE_PASS_1 && !InetdMode && result)
+	{
+#		ifdef _NTSERVICE
+		if (!installService)
+#		endif // _NTSERVICE
+		logger("Read ini file %s\n", fn_ini);
+	}
+
+#	endif // !defined(NO_SOCKETS) && !defined(NO_LOG)
+
 	return result;
 }
 #endif // NO_INI_FILE
@@ -812,29 +867,24 @@ static void exec_self(char** argv)
 }
 
 
-static void HangupHandler(const int signal)
+static void HangupHandler(const int signal_unused)
 {
 	int i;
 	int_fast8_t daemonize_protection = TRUE;
 	CARGV argv_in = multi_argv == NULL ? global_argv : multi_argv;
 	int argc_in = multi_argc == 0 ? global_argc : multi_argc;
-	const char** argv_out = (const char**)malloc((argc_in + 2) * sizeof(char**));
+	const char** argv_out = (const char**)vlmcsd_malloc((argc_in + 2) * sizeof(char**));
 
-	if (argv_out)
+	for (i = 0; i < argc_in; i++)
 	{
-		for (i = 0; i < argc_in; i++)
-		{
-			if (!strcmp(argv_in[i], "-Z")) daemonize_protection = FALSE;
-			argv_out[i] = argv_in[i];
-		}
-
-		argv_out[argc_in] = argv_out[argc_in + 1] = NULL;
-		if (daemonize_protection) argv_out[argc_in] = (char*) "-Z";
-
-		cleanup(FALSE);
-		exec_self((char**)argv_out);
-		//execvp(argv_out[0], (char **const)argv_out);
+		if (!strcmp(argv_in[i], "-Z")) daemonize_protection = FALSE;
+		argv_out[i] = argv_in[i];
 	}
+
+	argv_out[argc_in] = argv_out[argc_in + 1] = NULL;
+	if (daemonize_protection) argv_out[argc_in] = (char*) "-Z";
+
+	exec_self((char**)argv_out);
 
 #	ifndef NO_LOG
 		logger("Fatal: Unable to restart on SIGHUP: %s\n", strerror(errno));
@@ -848,11 +898,19 @@ static void HangupHandler(const int signal)
 #endif // NO_SIGHUP
 
 
-static void terminationHandler(const int signal)
+static void terminationHandler(const int signal_unused)
 {
-	cleanup(TRUE);
+	cleanup();
 	exit(0);
 }
+
+
+#if defined(CHILD_HANDLER) || __minix__
+static void childHandler(const int signal)
+{
+	waitpid(-1, NULL, WNOHANG);
+}
+#endif // defined(CHILD_HANDLER) || __minix__
 
 
 static int daemonizeAndSetSignalAction()
@@ -860,11 +918,11 @@ static int daemonizeAndSetSignalAction()
 	struct sigaction sa;
 	sigemptyset(&sa.sa_mask);
 
-	#ifndef NO_LOG
+#	ifndef NO_LOG
 	if ( !nodaemon) if (daemon(!0, logstdout))
-	#else // NO_LOG
+#	else // NO_LOG
 	if ( !nodaemon) if (daemon(!0, 0))
-	#endif // NO_LOG
+#	endif // NO_LOG
 	{
 		printerrorf("Fatal: Could not daemonize to background.\n");
 		return(errno);
@@ -872,15 +930,19 @@ static int daemonizeAndSetSignalAction()
 
 	if (!InetdMode)
 	{
-		#ifndef USE_THREADS
+#		ifndef USE_THREADS
 
+#		if defined(CHILD_HANDLER) || __minix__
+		sa.sa_handler = childHandler;
+#		else // !(defined(CHILD_HANDLER) || __minix__)
 		sa.sa_handler = SIG_IGN;
+#		endif // !(defined(CHILD_HANDLER) || __minix__)
 		sa.sa_flags   = SA_NOCLDWAIT;
 
 		if (sigaction(SIGCHLD, &sa, NULL))
 			return(errno);
 
-		#endif // !USE_THREADS
+#		endif // !USE_THREADS
 
 		sa.sa_handler = terminationHandler;
 		sa.sa_flags   = 0;
@@ -888,11 +950,11 @@ static int daemonizeAndSetSignalAction()
 		sigaction(SIGINT, &sa, NULL);
 		sigaction(SIGTERM, &sa, NULL);
 
-		#ifndef NO_SIGHUP
+#		ifndef NO_SIGHUP
 		sa.sa_handler = HangupHandler;
 		sa.sa_flags   = SA_NODEFER;
 		sigaction(SIGHUP, &sa, NULL);
-		#endif // NO_SIGHUP
+#		endif // NO_SIGHUP
 	}
 
 	return 0;
@@ -911,7 +973,7 @@ static BOOL terminationHandler(const DWORD fdwCtrlType)
 		case CTRL_BREAK_EVENT:
 		case CTRL_LOGOFF_EVENT:
 		case CTRL_SHUTDOWN_EVENT:
-			cleanup(TRUE);
+			cleanup();
 			exit(0);
 		default:
 			return FALSE;
@@ -935,25 +997,16 @@ static DWORD daemonizeAndSetSignalAction()
 #endif // !defined(NO_SOCKETS)
 
 
-#ifdef _NTSERVICE
-static int_fast8_t installService = 0;
-static const char *restrict ServiceUser = NULL;
-static const char *restrict ServicePassword = "";
-#endif
-
 // Workaround for Cygwin fork bug (only affects cygwin processes that are Windows services)
 // Best is to compile for Cygwin with threads. fork() is slow and unreliable on Cygwin
 #if !defined(NO_INI_FILE) || !defined(NO_LOG) || !defined(NO_CL_PIDS)
 __pure static char* getCommandLineArg(char *const restrict optarg)
 {
-	#if !defined (__CYGWIN__) || defined(USE_THREADS)
+	#if !defined (__CYGWIN__) || defined(USE_THREADS) || defined(NO_SOCKETS)
 		return optarg;
 	#else
 		if (!IsNTService) return optarg;
 
-		/*char* result = (char*)malloc(strlen(optarg) + 1);
-		if (result) strcpy(result, optarg);
-		return result;*/
 		return allocateStringArgument(optarg);
 	#endif
 }
@@ -999,8 +1052,7 @@ static void parseGeneralArguments() {
 			break;
 
 		case 'H':
-			HwId = (BYTE*)malloc(sizeof(((RESPONSE_V6 *)0)->HwId));
-			if (!HwId) break;
+			HwId = (BYTE*)vlmcsd_malloc(sizeof(((RESPONSE_V6 *)0)->HwId));
 
 			hex2bin(HwId, optarg, sizeof(((RESPONSE_V6 *)0)->HwId));
 
@@ -1012,26 +1064,39 @@ static void parseGeneralArguments() {
 
 		#ifndef NO_SOCKETS
 
+		#ifndef USE_MSRPC
 		case '4':
 		case '6':
 		case 'P':
 			ignoreIniFileParameter(INI_PARAM_LISTEN);
 			break;
+		#else // USE_MSRPC
+		case 'P':
+			defaultport = optarg;
+			ignoreIniFileParameter(INI_PARAM_PORT);
+			break;
+		#endif // USE_MSRPC
 
-		#ifndef NO_LIMIT
+		#if !defined(NO_LIMIT) && !__minix__
 
 		case 'm':
+			#ifdef USE_MSRPC
+			MaxTasks = getOptionArgumentInt(o, 1, RPC_C_LISTEN_MAX_CALLS_DEFAULT);
+			#else // !USE_MSRPC
 			MaxTasks = getOptionArgumentInt(o, 1, SEM_VALUE_MAX);
+			#endif // !USE_MSRPC
 			ignoreIniFileParameter(INI_PARAM_MAX_WORKERS);
 			break;
 
-		#endif // NO_LIMIT
+		#endif // !defined(NO_LIMIT) && !__minix__
 		#endif // NO_SOCKETS
 
+		#if !defined(NO_TIMEOUT) && !__minix__ && !defined(USE_MSRPC)
 		case 't':
 			ServerTimeout = getOptionArgumentInt(o, 1, 600);
 			ignoreIniFileParameter(INI_PARAM_CONNECTION_TIMEOUT);
 			break;
+		#endif // !defined(NO_TIMEOUT) && !__minix__ && !defined(USE_MSRPC)
 
 		#ifndef NO_PID_FILE
 		case 'p':
@@ -1043,6 +1108,7 @@ static void parseGeneralArguments() {
 		#ifndef NO_INI_FILE
 		case 'i':
 			fn_ini = getCommandLineArg(optarg);
+			if (!strcmp(fn_ini, "-")) fn_ini = NULL;
 			break;
 		#endif
 
@@ -1063,15 +1129,17 @@ static void parseGeneralArguments() {
 		#endif // NO_LOG
 
 		#ifndef NO_SOCKETS
+		#ifndef USE_MSRPC
 		case 'L':
 			maxsockets++;
 			ignoreIniFileParameter(INI_PARAM_LISTEN);
 			break;
+		#endif // USE_MSRPC
 
 		case 'f':
 			nodaemon = 1;
 			#ifndef NO_LOG
-			if (!InetdMode) logstdout = 1;
+			logstdout = 1;
 			#endif
 			break;
 
@@ -1085,7 +1153,9 @@ static void parseGeneralArguments() {
 			break;
 
 		case 's':
+			#ifndef USE_MSRPC
         	if (InetdMode) usage();
+			#endif // USE_MSRPC
             if (!IsNTService) installService = 1; // Install
             break;
 
@@ -1100,21 +1170,16 @@ static void parseGeneralArguments() {
 
 		#ifndef NO_LOG
 		case 'e':
-			if (!InetdMode) logstdout = 1;
+			logstdout = 1;
 			break;
 		#endif // NO_LOG
 		#endif // NO_SOCKETS
 
 		#ifndef _WIN32
-		case 'I':
-			#ifndef NO_SOCKETS
-			InetdMode = 1;
-			nodaemon = 1;
-			maxsockets = 0;
-			#ifndef NO_LOG
-			logstdout = 0;
-			#endif // NO_LOG
-			#endif // NO_SOCKETS
+		case 'I': // Backward compatibility with svn681 and earlier
+			#ifdef _PEDANTIC
+			printerrorf("Warning: Ignoring option -I which is for backward compatibility with svn681 and earlier only.\n");
+			#endif // _PEDANTIC
 			break;
 		#endif // _WIN32
 
@@ -1169,21 +1234,33 @@ static void parseGeneralArguments() {
 
 		#ifndef NO_CUSTOM_INTERVALS
 		case 'R':
-			RenewalInterval = getTimeSpanFromCommandLine(optarg, o);
+			VLRenewalInterval = getTimeSpanFromCommandLine(optarg, o);
 			ignoreIniFileParameter(INI_PARAM_RENEWAL_INTERVAL);
 			break;
 
 		case 'A':
-			ActivationInterval = getTimeSpanFromCommandLine(optarg, o);
+			VLActivationInterval = getTimeSpanFromCommandLine(optarg, o);
 			ignoreIniFileParameter(INI_PARAM_ACTIVATION_INTERVAL);
 			break;
 		#endif
 
+		#ifndef USE_MSRPC
 		case 'd':
 		case 'k':
 			DisconnectImmediately = o == 'd';
 			ignoreIniFileParameter(INI_PARAM_DISCONNECT_IMMEDIATELY);
 			break;
+
+		case 'N':
+			if (!getArgumentBool(&UseRpcNDR64, optarg)) usage();
+			ignoreIniFileParameter(INI_PARAM_RPC_NDR64);
+			break;
+
+		case 'B':
+			if (!getArgumentBool(&UseRpcBTFN, optarg)) usage();
+			ignoreIniFileParameter(INI_PARAM_RPC_BTFN);
+			break;
+		#endif // !USE_MSRPC
 
 		case 'V':
 			#ifdef _NTSERVICE
@@ -1236,19 +1313,19 @@ static void writePidFile()
 #define writePidFile(x)
 #endif // NO_PID_FILE
 
+#if !defined(NO_SOCKETS) && !defined(USE_MSRPC)
 
-void cleanup(int_fast8_t RemovePidFile)
+void cleanup()
 {
-	#ifndef NO_SOCKETS
 
 	if (!InetdMode)
 	{
 		#ifndef NO_PID_FILE
-		if (RemovePidFile && fn_pid) unlink(fn_pid);
+		if (fn_pid) unlink(fn_pid);
 		#endif // NO_PID_FILE
 		closeAllListeningSockets();
 
-		#if !defined(NO_LIMIT) && !defined(NO_SOCKETS) && !defined(_WIN32)
+		#if !defined(NO_LIMIT) && !defined(NO_SOCKETS) && !defined(_WIN32) && !__minix__
 		sem_unlink("/vlmcsd");
 		#if !defined(USE_THREADS) && !defined(CYGWIN)
 		if (shmid >= 0)
@@ -1257,18 +1334,36 @@ void cleanup(int_fast8_t RemovePidFile)
 			shmctl(shmid, IPC_RMID, NULL);
 		}
 		#endif // !defined(USE_THREADS) && !defined(CYGWIN)
-		#endif // !defined(NO_LIMIT) && !defined(NO_SOCKETS) && !defined(_WIN32)
+		#endif // !defined(NO_LIMIT) && !defined(NO_SOCKETS) && !defined(_WIN32) && !__minix__
 
 		#ifndef NO_LOG
 		logger("vlmcsd %s was shutdown\n", Version);
 		#endif // NO_LOG
 	}
 
-	#endif // NO_SOCKETS
 }
 
+#elif defined(USE_MSRPC)
 
-#if !defined(NO_LIMIT) && !defined(NO_SOCKETS)
+void cleanup()
+{
+#	ifndef NO_PID_FILE
+	if (fn_pid) unlink(fn_pid);
+#	endif // NO_PID_FILE
+
+#	ifndef NO_LOG
+	logger("vlmcsd %s was shutdown\n", Version);
+#	endif // NO_LOG
+}
+
+#else // Neither Sockets nor RPC
+
+__pure void cleanup() {}
+
+#endif // Neither Sockets nor RPC
+
+
+#if !defined(USE_MSRPC) && !defined(NO_LIMIT) && !defined(NO_SOCKETS) && !__minix__
 // Get a semaphore for limiting the maximum concurrent tasks
 static void allocateSemaphore(void)
 {
@@ -1278,12 +1373,15 @@ static void allocateSemaphore(void)
 	#define sharemode 1
 	#endif
 
+	#ifndef _WIN32
+	sem_unlink("/vlmcsd");
+	#endif
+
 	if(MaxTasks < SEM_VALUE_MAX && !InetdMode)
 	{
 		#ifndef _WIN32
-		#if !defined(USE_THREADS) && !defined(CYGWIN)
 
-		sem_unlink("/vlmcsd");
+		#if !defined(USE_THREADS) && !defined(CYGWIN)
 
 		if ((Semaphore = sem_open("/vlmcsd",  O_CREAT /*| O_EXCL*/, 0700, MaxTasks)) == SEM_FAILED) // fails on many systems
 		{
@@ -1305,14 +1403,11 @@ static void allocateSemaphore(void)
 
 		#else // THREADS or CYGWIN
 
-		if ( // sem_init is not implemented in Darwin (MacOS / iOS) thus we need a backup strategy
-                !(Semaphore = (sem_t*)malloc(sizeof(sem_t))) ||
-                sem_init(Semaphore, sharemode, MaxTasks) < 0
-		)
-		{
-			if (Semaphore) free(Semaphore);
+		Semaphore = (sem_t*)vlmcsd_malloc(sizeof(sem_t));
 
-			sem_unlink("/vlmcsd");
+		if (sem_init(Semaphore, sharemode, MaxTasks) < 0) // sem_init is not implemented on Darwin (returns ENOSYS)
+		{
+			free(Semaphore);
 
 			if ((Semaphore = sem_open("/vlmcsd",  O_CREAT /*| O_EXCL*/, 0700, MaxTasks)) == SEM_FAILED)
 			{
@@ -1334,16 +1429,16 @@ static void allocateSemaphore(void)
 		#endif // _WIN32
 	}
 }
-#endif // !defined(NO_LIMIT) && !defined(NO_SOCKETS
+#endif // !defined(NO_LIMIT) && !defined(NO_SOCKETS) && !__minix__
 
 
-#ifndef NO_SOCKETS
+#if !defined(NO_SOCKETS) && !defined(USE_MSRPC)
 int setupListeningSockets()
 {
 	int o;
 	uint_fast8_t allocsockets = maxsockets ? maxsockets : 2;
 
-	if (!(SocketList = (SOCKET*)malloc((size_t)allocsockets * sizeof(SOCKET)))) return !0;
+	SocketList = (SOCKET*)vlmcsd_malloc((size_t)allocsockets * sizeof(SOCKET));
 
 	haveIPv4Stack = checkProtocolStack(AF_INET);
 	haveIPv6Stack = checkProtocolStack(AF_INET6);
@@ -1394,6 +1489,9 @@ int setupListeningSockets()
 	{
 		if (fn_ini && !readIniFile(INI_FILE_PASS_2))
 		{
+			#ifdef INI_FILE
+			if (strcmp(fn_ini, INI_FILE))
+			#endif // INI_FILE
 			printerrorf("Warning: Can't read %s: %s\n", fn_ini, strerror(errno));
 		}
 	}
@@ -1415,7 +1513,7 @@ int setupListeningSockets()
 
 	return 0;
 }
-#endif
+#endif // !defined(NO_SOCKETS) && !defined(USE_MSRPC)
 
 
 int server_main(int argc, CARGV argv)
@@ -1459,6 +1557,7 @@ int newmain()
 
 	#ifdef _WIN32
 
+	#ifndef USE_MSRPC
 	// Windows Sockets must be initialized
 	WSADATA wsadata;
 
@@ -1467,6 +1566,7 @@ int newmain()
 		printerrorf("Fatal: Could not initialize Windows sockets (Error: %d).\n", error);
 		return error;
 	}
+	#endif // USE_MSRPC
 
 	// Windows can never daemonize
 	nodaemon = 1;
@@ -1481,23 +1581,40 @@ int newmain()
 
 	parseGeneralArguments(); // Does not return if an error occurs
 
+	#if !defined(_WIN32) && !defined(NO_SOCKETS) && !defined(USE_MSRPC)
+	struct stat statbuf;
+	fstat(STDIN_FILENO, &statbuf);
+	if (S_ISSOCK(statbuf.st_mode))
+	{
+		InetdMode = 1;
+		nodaemon = 1;
+		maxsockets = 0;
+		#ifndef NO_LOG
+		logstdout = 0;
+		#endif // NO_LOG
+	}
+	#endif // !defined(_WIN32) && !defined(NO_SOCKETS) && !defined(USE_MSRPC)
+
 	#ifndef NO_INI_FILE
 	if (fn_ini && !readIniFile(INI_FILE_PASS_1))
 	{
+		#ifdef INI_FILE
+		if (strcmp(fn_ini, INI_FILE))
+		#endif // INI_FILE
 		printerrorf("Warning: Can't read %s: %s\n", fn_ini, strerror(errno));
 	}
 	#endif // NO_INI_FILE
 
-	#if !defined(NO_LIMIT) && !defined(NO_SOCKETS)
+	#if !defined(NO_LIMIT) && !defined(NO_SOCKETS) && !__minix__ && !defined(USE_MSRPC)
 	allocateSemaphore();
-	#endif // !defined(NO_LIMIT) && !defined(NO_SOCKETS)
+	#endif // !defined(NO_LIMIT) && !defined(NO_SOCKETS) && __minix__
 
 	#ifdef _NTSERVICE
 	if (installService)
 		return NtServiceInstallation(installService, ServiceUser, ServicePassword);
 	#endif // _NTSERVICE
 
-	#ifndef NO_SOCKETS
+	#if !defined(NO_SOCKETS) && !defined(USE_MSRPC)
 	if (!InetdMode)
 	{
 		if ((error = setupListeningSockets())) return error;
@@ -1506,6 +1623,7 @@ int newmain()
 
 	// After sockets have been set up, we may switch to a lower privileged user
 	#if !defined(_WIN32) && !defined(NO_USER_SWITCH)
+
 	#ifndef NO_SIGHUP
 	if (!IsRestarted)
 	{
@@ -1524,6 +1642,7 @@ int newmain()
 	#ifndef NO_SIGHUP
 	}
 	#endif // NO_SIGHUP
+
 	#endif // !defined(_WIN32) && !defined(NO_USER_SWITCH)
 
 	randomNumberInit();
@@ -1543,21 +1662,23 @@ int newmain()
 
 	writePidFile();
 
-	#if !defined(NO_LOG) && !defined(NO_SOCKETS)
-	if (!InetdMode) logger("vlmcsd %s started successfully\n", Version);
-	#endif
+	#if !defined(NO_LOG) && !defined(NO_SOCKETS) && !defined(USE_MSRPC)
+	if (!InetdMode)
+		logger("vlmcsd %s started successfully\n", Version);
+	#endif // !defined(NO_LOG) && !defined(NO_SOCKETS) && !defined(USE_MSRPC)
 
-	#ifdef _NTSERVICE
+	#if defined(_NTSERVICE) && !defined(USE_MSRPC)
 	if (IsNTService) ReportServiceStatus(SERVICE_RUNNING, NO_ERROR, 200);
-	#endif
+	#endif // defined(_NTSERVICE) && !defined(USE_MSRPC)
 
-	int rc = runServer();
+	int rc;
+	rc = runServer();
 
 	// Clean up things and exit
 	#ifdef _NTSERVICE
 	if (!ServiceShutdown)
 	#endif
-		cleanup(TRUE);
+		cleanup();
 	#ifdef _NTSERVICE
 	else
 		ReportServiceStatus(SERVICE_STOPPED, NO_ERROR, 0);

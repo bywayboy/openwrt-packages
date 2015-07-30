@@ -9,14 +9,12 @@
 #define __T(x)    #x
 #define  _T(x) __T(x)
 
-extern char *fn_pid;
-extern char *fn_ini;
 extern char *fn_log;
 
 #include "types.h"
 
 //int main(int argc, CARGV);
-extern void cleanup(int_fast8_t RemovePidFile);
+extern void cleanup();
 
 #ifdef _NTSERVICE
 int newmain();
@@ -46,6 +44,9 @@ int server_main(int argc, CARGV argv);
 #define INI_PARAM_DISCONNECT_IMMEDIATELY 11
 #define INI_PARAM_UID 12
 #define INI_PARAM_GID 13
+#define INI_PARAM_PORT 14
+#define INI_PARAM_RPC_NDR64 15
+#define INI_PARAM_RPC_BTFN 16
 
 #define INI_FILE_PASS_1 1
 #define INI_FILE_PASS_2 2

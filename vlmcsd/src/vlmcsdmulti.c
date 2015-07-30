@@ -12,10 +12,10 @@
 #include <libgen.h>
 #include <stdio.h>
 
+#include "vlmcs.h"
+#include "vlmcsd.h"
 #include "types.h"
 #include "shared_globals.h"
-#include "vlmcsd.h"
-#include "vlmcs.h"
 #include "output.h"
 
 #if (defined(_WIN32) || defined(__CYGWIN__))

@@ -20,6 +20,9 @@ SET(SOURCES
 	crypto_internal.c
 	shared_globals.c
 	helpers.c
+	dns_srv.c
+	ns_name.c
+	ns_parser.c
 )
 
 ADD_EXECUTABLE(vlmcsd ${SOURCES})

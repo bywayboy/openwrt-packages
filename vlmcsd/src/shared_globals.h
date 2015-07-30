@@ -16,13 +16,19 @@
 #include <pwd.h>
 #include <grp.h>
 #include <syslog.h>
+#if (!defined(NO_LIMIT) || defined(USE_THREADS)) && !__minix__
 #include <pthread.h>
+#endif // (!defined(NO_LIMIT) || defined(USE_THREADS)) && !__minix__
 #include <fcntl.h>
 #include <sys/stat.h>
+#if !defined(NO_LIMIT) && !__minix__
 #include <semaphore.h>
+#endif // !defined(NO_LIMIT) && !__minix__
 #else
+#ifndef USE_MSRPC
 #include <winsock2.h>
 #include <ws2tcpip.h>
+#endif // USE_MSRPC
 #include <windows.h>
 #endif
 
@@ -49,7 +55,7 @@ typedef struct
 	#endif // NO_LOG
 } KmsResponseParam_t, *PKmsResponseParam_t;
 
-#ifndef NO_LIMIT
+#if !defined(NO_LIMIT) && !__minix__
 #ifndef SEM_VALUE_MAX // Android does not define this
 #ifdef __ANDROID__
 #define SEM_VALUE_MAX 0x3fffffff
@@ -59,13 +65,7 @@ typedef struct
 #define SEM_VALUE_MAX 0x7fff // Be cautious if unknown
 #endif // __ANDROID__
 #endif // !defined(SEM_VALUE_MAX)
-#endif // NO_LIMIT
-
-#ifndef _WIN32
-#define SENDRECV_T(v)  int (*v)(int, BYTE*, int, int)
-#else
-#define SENDRECV_T(v)  int (WINAPI *v)(int, BYTE*, int, int)
-#endif
+#endif // !defined(NO_LIMIT) && !__minix__
 
 extern const char *const Version;
 
@@ -74,34 +74,39 @@ extern const char *const Version;
 #define UINT_MAX 4294967295
 #endif
 
-#ifndef NO_PID_FILE
-extern char *fn_pid;
-#endif
-#ifndef NO_INI_FILE
-extern char *fn_ini;
-#endif
 
-extern const char *defaultport;
 extern int global_argc, multi_argc;
 extern CARGV global_argv, multi_argv;
 extern int_fast8_t nodaemon;
-extern int_fast8_t InetdMode;
-extern DWORD ActivationInterval;
-extern DWORD RenewalInterval;
-extern int_fast8_t UseMultiplexedRpc;
+extern DWORD VLActivationInterval;
+extern DWORD VLRenewalInterval;
 extern int_fast8_t DisconnectImmediately;
-extern DWORD ServerTimeout;
 extern KmsResponseParam_t KmsResponseParameters[MAX_KMSAPPS];
 extern const char *const cIPv4;
 extern const char *const cIPv6;
+extern int_fast8_t InetdMode;
 
-#if !defined(NO_LIMIT) && !defined (NO_SOCKETS)
-extern int32_t MaxTasks;
-#endif // !defined(NO_LIMIT) && !defined (NO_SOCKETS)
+#ifndef USE_MSRPC
+extern int_fast8_t UseMultiplexedRpc;
+extern int_fast8_t UseRpcNDR64;
+extern int_fast8_t UseRpcBTFN;
+#endif // USE_MSRPC
+
+#ifndef NO_SOCKETS
+extern const char *defaultport;
+#endif // NO_SOCKETS
 
 #if !defined(NO_SOCKETS) && !defined(NO_SIGHUP) && !defined(_WIN32)
 extern int_fast8_t IsRestarted;
 #endif // !defined(NO_SOCKETS) && !defined(NO_SIGHUP) && !defined(_WIN32)
+
+#if !defined(NO_TIMEOUT) && !__minix__
+extern DWORD ServerTimeout;
+#endif // !defined(NO_TIMEOUT) && !__minix__
+
+#if !defined(NO_LIMIT) && !defined (NO_SOCKETS) && !__minix__
+extern int32_t MaxTasks;
+#endif // !defined(NO_LIMIT) && !defined (NO_SOCKETS) && !__minix__
 
 #ifndef NO_LOG
 extern char *fn_log;
@@ -116,18 +121,21 @@ extern int_fast8_t RandomizationLevel;
 extern uint16_t Lcid;
 #endif
 
-#ifndef NO_SOCKETS
+#if !defined(NO_SOCKETS) && !defined(USE_MSRPC)
 extern SOCKET *SocketList;
 extern int numsockets;
 
-#ifndef NO_LIMIT
+#if !defined(NO_LIMIT) && !__minix__
+
 #ifndef _WIN32
 extern sem_t *Semaphore;
 #else // _WIN32
 extern HANDLE Semaphore;
 #endif // _WIN32
-#endif // NO_LIMIT
-#endif // NO_SOCKETS
+
+#endif // !defined(NO_LIMIT) && !__minix__
+
+#endif // !defined(NO_SOCKETS) && !defined(USE_MSRPC)
 
 #ifdef _NTSERVICE
 extern int_fast8_t IsNTService;

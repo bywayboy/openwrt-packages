@@ -36,7 +36,7 @@ typedef struct {
 	uint_fast8_t rounds;
 } AesCtx;
 
-void AesInitKey(AesCtx *Ctx, const BYTE *Key, BOOL IsV6, int AesKeyBytes);
+void AesInitKey(AesCtx *Ctx, const BYTE *Key, int_fast8_t IsV6, int AesKeyBytes);
 void AesEncryptBlock(const AesCtx *const Ctx, BYTE *block);
 void AesDecryptBlock(const AesCtx *const Ctx, BYTE *block);
 void AesEncryptCbc(const AesCtx *const Ctx, BYTE *iv, BYTE *data, size_t *len);
@@ -48,6 +48,9 @@ void MixColumnsR(BYTE *restrict state);
 
 #elif defined(_CRYPTO_POLARSSL)
 #include "crypto_polarssl.h"
+
+#elif defined(_CRYPTO_WINDOWS)
+#include "crypto_windows.h"
 
 #else
 #include "crypto_internal.h"

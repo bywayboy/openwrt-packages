@@ -3,6 +3,8 @@
 #endif // CONFIG
 #include CONFIG
 
+#ifndef USE_MSRPC
+
 #ifndef _GNU_SOURCE
 #define _GNU_SOURCE
 #endif
@@ -13,77 +15,31 @@
 #include <unistd.h>
 #include <fcntl.h>
 #include <errno.h>
-//#ifndef DNS_PARSER_INTERNAL
-#if __ANDROID__
 #include <netinet/in.h>
-#include "nameser.h"
-#include "resolv.h"
-#else // other Unix non-Android
-#include <netinet/in.h>
-#include <arpa/nameser.h>
-#include <resolv.h>
-#endif // other Unix non-Android
-//#endif // DNS_PARSER_INTERNAL
-#else // WIN32
-#include <winsock2.h>
-#include <windows.h>
-#include <windns.h>
 #endif // WIN32
 
 #include "network.h"
 #include "endian.h"
 #include "output.h"
-#include "vlmcs.h"
 #include "helpers.h"
 #include "shared_globals.h"
 #include "rpc.h"
 
-#if defined(DNS_PARSER_INTERNAL) && !defined(_WIN32) && !defined(NO_DNS)
 
-#include "ns_name.h"
-#include "ns_parse.h"
-#undef ns_msg
-#undef ns_initparse
-#undef ns_parserr
-#undef ns_rr
-#undef ns_name_uncompress
-#undef ns_msg_base
-#undef ns_msg_end
-#undef ns_rr_rdata
-#undef ns_rr_type
-#undef ns_msg_count
-#undef ns_rr_class
-#undef ns_s_an
-#define ns_msg ns_msg_vlmcsd
-#define ns_initparse ns_initparse_vlmcsd
-#define ns_parserr ns_parserr_vlmcsd
-#define ns_rr ns_rr_vlmcsd
-#define ns_name_uncompress ns_name_uncompress_vlmcsd
-#define ns_msg_base ns_msg_base_vlmcsd
-#define ns_msg_end ns_msg_end_vlmcsd
-#define ns_rr_rdata ns_rr_rdata_vlmcsd
-#define ns_rr_type ns_rr_type_vlmcsd
-#define ns_msg_count ns_msg_count_vlmcsd
-#define ns_rr_class ns_rr_class_vlmcsd
-#define ns_s_an ns_s_an_vlmcsd
-
-#ifndef NS_MAXLABEL
-#define NS_MAXLABEL 63
+#ifndef _WIN32
+typedef ssize_t (*sendrecv_t)(int, void*, size_t, int);
+#else
+typedef int (WINAPI *sendrecv_t)(SOCKET, void*, int, int);
 #endif
-
-#endif // defined(DNS_PARSER_INTERNAL) && !defined(_WIN32)
-
-
-
 
 
 // Send or receive a fixed number of bytes regardless if received in one or more chunks
-BOOL sendrecv(int sock, BYTE *data, int len, int do_send)
+int_fast8_t sendrecv(SOCKET sock, BYTE *data, int len, int_fast8_t do_send)
 {
 	int n;
-	SENDRECV_T( f ) = do_send
-			? (SENDRECV_T()) send
-			: (SENDRECV_T()) recv;
+	sendrecv_t  f = do_send
+			? (sendrecv_t) send
+			: (sendrecv_t) recv;
 
 	do
 	{
@@ -96,51 +52,44 @@ BOOL sendrecv(int sock, BYTE *data, int len, int do_send)
 }
 
 
-static int_fast8_t ip2str(char *restrict result, const size_t resultlen, const struct sockaddr *const restrict sa, const socklen_t socklen)
+static int_fast8_t ip2str(char *restrict result, const size_t resultLength, const struct sockaddr *const restrict socketAddress, const socklen_t socketLength)
 {
 	static const char *const fIPv4 = "%s:%s";
 	static const char *const fIPv6 = "[%s]:%s";
-	char addr[64], serv[8];
+	char ipAddress[64], portNumber[8];
 
-	if (getnameinfo(sa, socklen, addr, sizeof(addr), serv, sizeof(serv), NI_NUMERICHOST | NI_NUMERICSERV)) return FALSE;
-	if ((unsigned int)snprintf(result, resultlen, sa->sa_family == AF_INET6 ? fIPv6 : fIPv4, addr, serv) > resultlen) return FALSE;
+	if (getnameinfo
+		(
+			socketAddress,
+			socketLength,
+			ipAddress,
+			sizeof(ipAddress),
+			portNumber,
+			sizeof(portNumber),
+			NI_NUMERICHOST | NI_NUMERICSERV
+		))
+	{
+		return FALSE;
+	}
+
+	if ((unsigned int)snprintf(result, resultLength, socketAddress->sa_family == AF_INET6 ? fIPv6 : fIPv4, ipAddress, portNumber) > resultLength) return FALSE;
 	return TRUE;
 }
 
 
 static int_fast8_t getSocketList(struct addrinfo **saList, const char *const addr, const int flags, const int AddressFamily)
 {
-	int rc;
-
+	int status;
+	char *szHost, *szPort;
 	size_t len = strlen(addr) + 1;
 
 	// Don't alloca too much
-	if (len > 256) return FALSE;
+	if (len > 264) return FALSE;
 
 	char *addrcopy = (char*)alloca(len);
-
 	memcpy(addrcopy, addr, len);
 
-	char *szHost = addrcopy;
-	const char *szPort = defaultport;
-
-	char *lastcolon = strrchr(addrcopy, ':');
-	char *firstcolon = strchr(addrcopy, ':');
-	char *closingbracket = strrchr(addrcopy, ']');
-
-	if (*addrcopy == '[' && closingbracket) //Address in brackets
-	{
-		*closingbracket = 0;
-		szHost++;
-
-		if (closingbracket[1] == ':')
-			szPort = closingbracket + 2;
-	}
-	else if (firstcolon && firstcolon == lastcolon) //IPv4 address or hostname with port
-	{
-		*firstcolon = 0;
-		szPort = firstcolon + 1;
-	}
+	parseAddress(addrcopy, &szHost, &szPort);
 
 	struct addrinfo hints;
 
@@ -151,9 +100,9 @@ static int_fast8_t getSocketList(struct addrinfo **saList, const char *const add
 	hints.ai_protocol = IPPROTO_TCP;
 	hints.ai_flags = flags;
 
-	if ((rc = getaddrinfo(szHost, szPort, &hints, saList)))
+	if ((status = getaddrinfo(szHost, szPort, &hints, saList)))
 	{
-		printerrorf("Warning: %s: %s\n", addr, gai_strerror(rc));
+		printerrorf("Warning: %s: %s\n", addr, gai_strerror(status));
 		return FALSE;
 	}
 
@@ -163,7 +112,7 @@ static int_fast8_t getSocketList(struct addrinfo **saList, const char *const add
 
 static int_fast8_t setBlockingEnabled(SOCKET fd, int_fast8_t blocking)
 {
-	if (fd < 0) return FALSE;
+	if (fd == INVALID_SOCKET) return FALSE;
 
 	#ifdef _WIN32
 
@@ -225,27 +174,22 @@ SOCKET connectToAddress(const char *const addr, const int AddressFamily, int_fas
 
 		s = socket(sa->ai_family, SOCK_STREAM, IPPROTO_TCP);
 
-		#ifndef _WIN32 // Standard Posix timeout structure
+#		if !defined(NO_TIMEOUT) && !__minix__
+#		ifndef _WIN32 // Standard Posix timeout structure
 
-		// llvm-gcc 4.2 from Apple SDK can't compile this
-		/*struct timeval to = {
-				.tv_sec  = 10,
-				.tv_usec = 0
-		};*/
-
-		// Doesn't seem to cause any perfomance degradation (neither speed nor size)
 		struct timeval to;
 		to.tv_sec = 10;
 		to.tv_usec = 0;
 
-		#else // Windows requires a DWORD with milliseconds
+#		else // Windows requires a DWORD with milliseconds
 
 		DWORD to = 10000;
 
-		#endif // _WIN32
+#		endif // _WIN32
 
 		setsockopt(s, SOL_SOCKET, SO_RCVTIMEO, (sockopt_t)&to, sizeof(to));
 		setsockopt(s, SOL_SOCKET, SO_SNDTIMEO, (sockopt_t)&to, sizeof(to));
+#		endif // !defined(NO_TIMEOUT) && !__minix__
 
 		if (!connect(s, sa->ai_addr, sa->ai_addrlen))
 		{
@@ -264,247 +208,7 @@ SOCKET connectToAddress(const char *const addr, const int AddressFamily, int_fas
 }
 
 
-#ifndef NO_DNS
-
-static int kmsServerListCompareFunc1(const void* a, const void* b)
-{
-	if ( !a && !b) return 0;
-	if ( a && !b) return -1;
-	if ( !a && b) return 1;
-
-	int priority_order =  (int)((*(kms_server_dns_ptr*)a)->priority) - ((int)(*(kms_server_dns_ptr*)b)->priority);
-
-	if (priority_order) return priority_order;
-
-	return (int)((*(kms_server_dns_ptr*)b)->random_weight) - ((int)(*(kms_server_dns_ptr*)a)->random_weight);
-}
-
-
-//TODO: move to helpers.c
-static unsigned int isqrt(unsigned int n)
-{
-	unsigned int c = 0x8000;
-	unsigned int g = 0x8000;
-
-	for(;;)
-	{
-		if(g*g > n)
-			g ^= c;
-
-		c >>= 1;
-
-		if(c == 0) return g;
-
-		g |= c;
-	}
-}
-
-
-void sortSrvRecords(kms_server_dns_ptr* serverlist, const int answers)
-{
-	int i;
-
-	for (i = 0; i < answers; i++)
-	{
-		serverlist[i]->random_weight = (rand32() % 256) * isqrt(serverlist[i]->weight * 1000);
-	}
-
-	qsort(serverlist, answers, sizeof(kms_server_dns_ptr), kmsServerListCompareFunc1);
-}
-
-
-#define RECEIVE_BUFFER_SIZE 2048
-#ifndef _WIN32 // UNIX resolver
-
-static int getDnsRawAnswer(const char *restrict query, unsigned char** receive_buffer)
-{
-	if (res_init() < 0)
-	{
-		fprintf(stderr, "Cannot initialize resolver: %s", strerror(errno));
-		return 0;
-	}
-
-	if(!(*receive_buffer = (unsigned char*)malloc(RECEIVE_BUFFER_SIZE))) OutOfMemory();
-
-	int bytes_received;
-
-	if (*query == '.')
-	{
-#		if __ANDROID__ || __GLIBC__ /* including __UCLIBC__*/ || __APPLE__ || __CYGWIN__ || __FreeBSD__ || __NetBSD__ || __DragonFly__ || __OpenBSD__ || __sun__
-			bytes_received = res_querydomain("_vlmcs._tcp", query + 1, ns_c_in,	ns_t_srv, *receive_buffer, RECEIVE_BUFFER_SIZE);
-#		else
-			char* querystring = (char*)alloca(strlen(query) + 12);
-			strcpy(querystring, "_vlmcs._tcp");
-			strcat(querystring, query);
-			bytes_received = res_query(querystring, ns_c_in, ns_t_srv, *receive_buffer, RECEIVE_BUFFER_SIZE);
-#		endif
-	}
-	else
-	{
-		bytes_received = res_search("_vlmcs._tcp", ns_c_in, ns_t_srv, *receive_buffer, RECEIVE_BUFFER_SIZE);
-	}
-
-	if (bytes_received < 0)
-	{
-		fprintf(stderr, "Fatal: DNS query to %s%s failed: %s\n", "_vlmcs._tcp",	*query == '.' ? query : "", hstrerror(h_errno));
-		return 0;
-	}
-
-	return bytes_received;
-}
-
-
-int getKmsServerList(kms_server_dns_ptr** serverlist, const char *restrict query)
-{
-	unsigned char* receive_buffer;
-	*serverlist = NULL;
-
-	int bytes_received = getDnsRawAnswer(query, &receive_buffer);
-
-	if (bytes_received == 0) return 0;
-
-	ns_msg msg;
-
-	if (ns_initparse(receive_buffer, bytes_received, &msg) < 0)
-	{
-		fprintf(stderr, "Fatal: Incorrect DNS response: %s\n", strerror(errno));
-		free(receive_buffer);
-		return 0;
-	}
-
-	uint16_t i, answers = ns_msg_count(msg, ns_s_an);
-	if(!(*serverlist = (kms_server_dns_ptr*)malloc(answers * sizeof(kms_server_dns_ptr)))) OutOfMemory();
-
-	memset(*serverlist, 0, answers * sizeof(kms_server_dns_ptr));
-
-	for (i = 0; i < answers; i++)
-	{
-		ns_rr rr;
-
-		if (ns_parserr(&msg, ns_s_an, i, &rr) < 0)
-		{
-			fprintf(stderr, "Warning: Error in DNS resource record: %s\n", strerror(errno));
-			continue;
-		}
-
-		if (ns_rr_type(rr) != ns_t_srv)
-		{
-			fprintf(stderr, "Warning: DNS server returned non-SRV record\n");
-			continue;
-		}
-
-		if (ns_rr_class(rr) != ns_c_in)
-		{
-			fprintf(stderr, "Warning: DNS server returned non-IN class record\n");
-			continue;
-		}
-
-		dns_srv_record_ptr srvrecord = (dns_srv_record_ptr)ns_rr_rdata(rr);
-		kms_server_dns_ptr kms_server = (kms_server_dns_ptr)malloc(sizeof(kms_server_dns_t));
-
-		if (!kms_server) OutOfMemory();
-
-		(*serverlist)[i] = kms_server;
-
-		if (ns_name_uncompress(ns_msg_base(msg), ns_msg_end(msg), srvrecord->name, kms_server->serverName, NS_MAXLABEL + 1) < 0)
-		{
-			fprintf(stderr, "Warning: No valid DNS name returned in SRV record: %s\n", strerror(errno));
-			continue;
-		}
-
-        sprintf(kms_server->serverName + strlen(kms_server->serverName), ":%hu", GET_UA16BE(&srvrecord->port));
-        kms_server->priority = GET_UA16BE(&srvrecord->priority);
-        kms_server->weight = GET_UA16BE(&srvrecord->weight);
-
-	}
-
-	free(receive_buffer);
-	return answers;
-}
-
-#else // WIN32 (Windows Resolver)
-
-int getKmsServerList(kms_server_dns_ptr** serverlist, const char *const restrict query)
-{
-#	define MAX_DNS_NAME_SIZE 64
-#	define FQDN_QUERY_SIZE (MAX_DNS_NAME_SIZE + 12)
-	*serverlist = NULL;
-	PDNS_RECORD receive_buffer;
-	char dnsDomain[64];
-	char FqdnQuery[76];
-	DWORD size = 64;
-	DNS_STATUS result;
-	int answers = 0;
-	PDNS_RECORD dns_iterator;
-
-	if (*query == '-' && !GetComputerNameExA(ComputerNamePhysicalDnsDomain, dnsDomain, &size))
-	{
-		errorout("Fatal: Could not determine computer's DNS name: %s\n", vlmcsd_strerror(GetLastError()));
-		return 0;
-	}
-
-	if (*query == '-')
-	{
-		strcpy(FqdnQuery, "_vlmcs._tcp.");
-		strncat(FqdnQuery, dnsDomain, size);
-	}
-	else
-	{
-		strcpy(FqdnQuery, "_vlmcs._tcp");
-		strncat(FqdnQuery, query, MAX_DNS_NAME_SIZE);
-	}
-
-	if ((result = DnsQuery_UTF8(FqdnQuery, DNS_TYPE_SRV, 0, NULL, &receive_buffer, NULL)) != 0)
-	{
-		errorout("Fatal: DNS query to %s failed: %s\n", FqdnQuery, vlmcsd_strerror(result));
-		return 0;
-	}
-
-	for (dns_iterator = receive_buffer; dns_iterator; dns_iterator = dns_iterator->pNext)
-	{
-		if (dns_iterator->Flags.S.Section != 1) continue;
-
-		if (dns_iterator->wType != DNS_TYPE_SRV)
-		{
-			errorout("Warning: DNS server returned non-SRV record\n");
-			continue;
-		}
-
-		answers++;
-	}
-
-	if(!(*serverlist = (kms_server_dns_ptr*)malloc(answers * sizeof(kms_server_dns_ptr)))) OutOfMemory();
-
-	for (answers = 0, dns_iterator = receive_buffer; dns_iterator; dns_iterator = dns_iterator->pNext)
-	{
-		if (dns_iterator->wType != DNS_TYPE_SRV) continue;
-
-		kms_server_dns_ptr kms_server = (kms_server_dns_ptr)malloc(sizeof(kms_server_dns_t));
-
-		if (!kms_server) OutOfMemory();
-
-		memset(kms_server, 0, sizeof(kms_server_dns_t));
-
-		snprintf(kms_server->serverName, sizeof(kms_server->serverName), "%s:%hu", dns_iterator->Data.SRV.pNameTarget, dns_iterator->Data.SRV.wPort);
-		kms_server->priority = dns_iterator->Data.SRV.wPriority;
-		kms_server->weight = dns_iterator->Data.SRV.wWeight;
-
-		(*serverlist)[answers++] = kms_server;
-	}
-
-	//sortSrvRecords(*serverlist, answers, NoSrvRecordPriority);
-
-	DnsRecordListFree(receive_buffer, DnsFreeRecordList);
-
-	return answers;
-#	undef MAX_DNS_NAME_SIZE
-#	undef FQDN_QUERY_SIZE
-}
-#endif // _WIN32
-#undef RECEIVE_BUFFER_SIZE
-#endif // NO_DNS
 #ifndef NO_SOCKETS
-
 
 // Create a Listening socket for addrinfo sa and return socket s
 // szHost and szPort are for logging only
@@ -515,7 +219,7 @@ static int listenOnAddress(const struct addrinfo *const ai, SOCKET *s)
 
 	ip2str(ipstr, sizeof(ipstr), ai->ai_addr, ai->ai_addrlen);
 
-	//*s = INVALID_SOCKET;
+	//*s = socket(ai->ai_family, ai->ai_socktype, ai->ai_protocol);
 	*s = socket(ai->ai_family, SOCK_STREAM, IPPROTO_TCP);
 
 	if (*s == INVALID_SOCKET)
@@ -525,22 +229,40 @@ static int listenOnAddress(const struct addrinfo *const ai, SOCKET *s)
 		return error;
 	}
 
+#	if !defined(_WIN32) && !defined(NO_SIGHUP)
+
+	int flags = fcntl(*s, F_GETFD, 0);
+
+	if (flags != -1)
+	{
+		flags |= FD_CLOEXEC;
+		fcntl(*s, F_SETFD, flags);
+	}
+#	ifdef _PEDANTIC
+	else
+	{
+		printerrorf("Warning: Could not set FD_CLOEXEC flag on %s: %s\n", ipstr, vlmcsd_strerror(errno));
+	}
+#	endif // _PEDANTIC
+
+#	endif // !defined(_WIN32) && !defined(NO_SIGHUP)
+
 	BOOL socketOption = TRUE;
 
 	// fix for lame tomato toolchain
-	#ifndef IPV6_V6ONLY
-	#ifdef __linux__
-	#define IPV6_V6ONLY (26)
-	#endif // __linux__
-	#endif // IPV6_V6ONLY
+#	ifndef IPV6_V6ONLY
+#	ifdef __linux__
+#	define IPV6_V6ONLY (26)
+#	endif // __linux__
+#	endif // IPV6_V6ONLY
 
-	#ifdef IPV6_V6ONLY
+#	ifdef IPV6_V6ONLY
 	if (ai->ai_family == AF_INET6) setsockopt(*s, IPPROTO_IPV6, IPV6_V6ONLY, (sockopt_t)&socketOption, sizeof(socketOption));
-	#endif
+#	endif
 
-	#ifndef _WIN32
+#	ifndef _WIN32
 	setsockopt(*s, SOL_SOCKET, SO_REUSEADDR, (sockopt_t)&socketOption, sizeof(socketOption));
-	#endif
+#	endif
 
 	if (bind(*s, ai->ai_addr, ai->ai_addrlen) || listen(*s, SOMAXCONN))
 	{
@@ -550,9 +272,9 @@ static int listenOnAddress(const struct addrinfo *const ai, SOCKET *s)
 		return error;
 	}
 
-	#ifndef NO_LOG
+#	ifndef NO_LOG
 	logger("Listening on %s\n", ipstr);
-	#endif
+#	endif
 
 	return 0;
 }
@@ -661,13 +383,9 @@ void closeAllListeningSockets()
 
 static void serveClient(const SOCKET s_client, const DWORD RpcAssocGroup)
 {
-	#ifndef _WIN32 // Standard Posix timeout structure
+#	if !defined(NO_TIMEOUT) && !__minix__
 
-	// llvm-gcc 4.2 from Apple SDK can't compile this
-	/*struct timeval to = {
-		.tv_sec  = 60,
-		.tv_usec = 0
-	};*/
+#	ifndef _WIN32 // Standard Posix timeout structure
 
 	struct timeval to;
 	to.tv_sec = ServerTimeout;
@@ -677,37 +395,43 @@ static void serveClient(const SOCKET s_client, const DWORD RpcAssocGroup)
 
 	DWORD to = ServerTimeout * 1000;
 
-	#endif // _WIN32
+#	endif // _WIN32
 
-	if (
+#	if !defined(NO_LOG) && defined(_PEDANTIC)
+
+	int result =
 		setsockopt(s_client, SOL_SOCKET, SO_RCVTIMEO, (sockopt_t)&to, sizeof(to)) ||
-		setsockopt(s_client, SOL_SOCKET, SO_SNDTIMEO, (sockopt_t)&to, sizeof(to))
-	)
-	{
-		#ifndef _WIN32
-		if (socket_errno == VLMCSD_ENOTSOCK)
-			errorout("Fatal: %s\n", vlmcsd_strerror(socket_errno));
-		#endif // _WIN32
+		setsockopt(s_client, SOL_SOCKET, SO_SNDTIMEO, (sockopt_t)&to, sizeof(to));
 
-		socketclose(s_client);
-		return;
-	}
+    if (result) logger("Warning: Set timeout failed: %s\n", vlmcsd_strerror(socket_errno));
 
-	#ifndef NO_LOG
-	socklen_t len;
-	struct sockaddr_storage addr;
+#	else // !(!defined(NO_LOG) && defined(_PEDANTIC))
+
+    setsockopt(s_client, SOL_SOCKET, SO_RCVTIMEO, (sockopt_t)&to, sizeof(to));
+	setsockopt(s_client, SOL_SOCKET, SO_SNDTIMEO, (sockopt_t)&to, sizeof(to));
+
+#   endif // !(!defined(NO_LOG) && defined(_PEDANTIC))
+
+#	endif // !defined(NO_TIMEOUT) && !__minix__
 
 	char ipstr[64];
+	socklen_t len;
+	struct sockaddr_storage addr;
 
 	len = sizeof addr;
 
 	if (getpeername(s_client, (struct sockaddr*)&addr, &len) ||
 		!ip2str(ipstr, sizeof(ipstr), (struct sockaddr*)&addr, len))
 	{
+#		if !defined(NO_LOG) && defined(_PEDANTIC)
+		logger("Fatal: Cannot determine client's IP address: %s\n", vlmcsd_strerror(errno));
+#		endif // !defined(NO_LOG) && defined(_PEDANTIC)
 		socketclose(s_client);
 		return;
 	}
 
+
+#	ifndef NO_LOG
 	const char *const connection_type = addr.ss_family == AF_INET6 ? cIPv6 : cIPv4;
 	static const char *const cAccepted = "accepted";
 	static const char *const cClosed = "closed";
@@ -716,11 +440,11 @@ static void serveClient(const SOCKET s_client, const DWORD RpcAssocGroup)
 	logger(fIP, connection_type, cAccepted, ipstr);
 	#endif // NO_LOG
 
-	rpcServer(s_client, RpcAssocGroup);
+	rpcServer(s_client, RpcAssocGroup, ipstr);
 
-	#ifndef NO_LOG
+#	ifndef NO_LOG
 	logger(fIP, connection_type, cClosed, ipstr);
-	#endif // NO_LOG
+#	endif // NO_LOG
 
 	socketclose(s_client);
 }
@@ -729,23 +453,23 @@ static void serveClient(const SOCKET s_client, const DWORD RpcAssocGroup)
 #ifndef NO_SOCKETS
 static void post_sem(void)
 {
-	#if !defined(NO_LIMIT)
+	#if !defined(NO_LIMIT) && !__minix__
 	if (!InetdMode && MaxTasks != SEM_VALUE_MAX)
 	{
 		semaphore_post(Semaphore);
 	}
-	#endif // !defined(NO_LIMIT) && !defined(NO_SOCKETS)
+	#endif // !defined(NO_LIMIT) && !__minix__
 }
 
 
 static void wait_sem(void)
 {
-	#if !defined(NO_LIMIT)
+	#if !defined(NO_LIMIT) && !__minix__
 	if (!InetdMode && MaxTasks != SEM_VALUE_MAX)
 	{
 		semaphore_wait(Semaphore);
 	}
-	#endif // !defined(NO_LIMIT) && !defined(NO_SOCKETS)
+	#endif // !defined(NO_LIMIT) && !__minix__
 }
 #endif // NO_SOCKETS
 
@@ -881,28 +605,19 @@ int serveClientAsync(const SOCKET s_client, const DWORD RpcAssocGroup)
 
 	#else // threads implementation
 
-	PCLDATA thr_CLData = (PCLDATA)malloc(sizeof(CLDATA));
+	PCLDATA thr_CLData = (PCLDATA)vlmcsd_malloc(sizeof(CLDATA));
+	thr_CLData->socket = s_client;
+	thr_CLData->RpcAssocGroup = RpcAssocGroup;
 
-	if (thr_CLData)
-	{
-		thr_CLData->socket = s_client;
-		thr_CLData->RpcAssocGroup = RpcAssocGroup;
+	#if defined(_WIN32) || defined (__CYGWIN__) // Windows threads
 
-		#if defined(_WIN32) || defined (__CYGWIN__) // Windows threads
+	return serveClientAsyncWinThreads(thr_CLData);
 
-		return serveClientAsyncWinThreads(thr_CLData);
+	#else // Posix Threads
 
-		#else // Posix Threads
+	return ServeClientAsyncPosixThreads(thr_CLData);
 
-		return ServeClientAsyncPosixThreads(thr_CLData);
-
-		#endif // Posix Threads
-	}
-	else
-	{
-		socketclose(s_client);
-		return !0;
-	}
+	#endif // Posix Threads
 
 	#endif // USE_THREADS
 }
@@ -916,13 +631,13 @@ int runServer()
 
 	// If compiled for inetd-only mode just serve the stdin socket
 	#ifdef NO_SOCKETS
-	serveClient(fileno(stdin), RpcAssocGroup);
+	serveClient(STDIN_FILENO, RpcAssocGroup);
 	return 0;
 	#else
 	// In inetd mode just handle the stdin socket
 	if (InetdMode)
 	{
-		serveClient(fileno(stdin), RpcAssocGroup);
+		serveClient(STDIN_FILENO, RpcAssocGroup);
 		return 0;
 	}
 
@@ -956,3 +671,5 @@ int runServer()
 
 	return 0;
 }
+
+#endif // USE_MSRPC

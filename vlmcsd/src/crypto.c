@@ -109,7 +109,7 @@ static DWORD SubDword(DWORD v)
 }
 
 
-void AesInitKey(AesCtx *Ctx, const BYTE *Key, BOOL IsV6, int RijndaelKeyBytes)
+void AesInitKey(AesCtx *Ctx, const BYTE *Key, int_fast8_t IsV6, int RijndaelKeyBytes)
 {
 	int RijndaelKeyDwords = RijndaelKeyBytes / sizeof(DWORD);
 	Ctx->rounds = (uint_fast8_t)(RijndaelKeyDwords + 6);
@@ -197,25 +197,25 @@ void AesEncryptBlock(const AesCtx *const Ctx, BYTE *block)
 }
 
 
-void AesCmacV4(BYTE *Message, size_t MessageSize, BYTE *HashOut)
+void AesCmacV4(BYTE *Message, size_t MessageSize, BYTE *MacOut)
 {
     size_t i;
-    BYTE hash[AES_BLOCK_BYTES];
+    BYTE mac[AES_BLOCK_BYTES];
     AesCtx Ctx;
 
     AesInitKey(&Ctx, AesKeyV4, FALSE, V4_KEY_BYTES);
 
-    memset(hash, 0, sizeof(hash));
+    memset(mac, 0, sizeof(mac));
     memset(Message + MessageSize, 0, AES_BLOCK_BYTES);
     Message[MessageSize] = 0x80;
 
     for (i = 0; i <= MessageSize; i += AES_BLOCK_BYTES)
     {
-        XorBlock(Message + i, hash);
-        AesEncryptBlock(&Ctx, hash);
+        XorBlock(Message + i, mac);
+        AesEncryptBlock(&Ctx, mac);
     }
 
-    memcpy(HashOut, hash, AES_BLOCK_BYTES);
+    memcpy(MacOut, mac, AES_BLOCK_BYTES);
 }
 #endif
 

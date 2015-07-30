@@ -5,34 +5,42 @@
 
 #include "shared_globals.h"
 
-#ifndef NO_PID_FILE
-char *fn_pid = NULL;
-#endif
-#ifndef NO_INI_FILE
-char *fn_ini = NULL;
-#endif
-
-const char *defaultport = "1688";
 int global_argc, multi_argc = 0;
 CARGV global_argv, multi_argv = NULL;
 const char *const Version = VERSION;
-DWORD ActivationInterval = 60 * 2;   // 2 hours
-DWORD RenewalInterval = 60 * 24 * 7; // 7 days
-int_fast8_t UseMultiplexedRpc = TRUE;
+DWORD VLActivationInterval = 60 * 2;   // 2 hours
+DWORD VLRenewalInterval = 60 * 24 * 7; // 7 days
 int_fast8_t DisconnectImmediately = FALSE;
-DWORD ServerTimeout = 30;
 const char *const cIPv4 = "IPv4";
 const char *const cIPv6 = "IPv6";
 
-KmsResponseParam_t KmsResponseParameters[MAX_KMSAPPS];
+#ifndef USE_MSRPC
+int_fast8_t UseMultiplexedRpc = TRUE;
+int_fast8_t UseRpcNDR64 = TRUE;
+int_fast8_t UseRpcBTFN = TRUE;
+#endif // USE_MSRPC
 
-#if !defined(NO_LIMIT) && !defined (NO_SOCKETS)
-int32_t MaxTasks = SEM_VALUE_MAX;
-#endif // !defined(NO_LIMIT) && !defined (NO_SOCKETS)
+#ifndef NO_SOCKETS
+const char *defaultport = "1688";
+#endif // NO_SOCKETS
+
+KmsResponseParam_t KmsResponseParameters[MAX_KMSAPPS];
 
 #if !defined(NO_SOCKETS) && !defined(NO_SIGHUP) && !defined(_WIN32)
 int_fast8_t IsRestarted = FALSE;
 #endif // !defined(NO_SOCKETS) && !defined(NO_SIGHUP) && !defined(_WIN32)
+
+#if !defined(NO_TIMEOUT) && !__minix__
+DWORD ServerTimeout = 30;
+#endif // !defined(NO_TIMEOUT) && !__minix__
+
+#if !defined(NO_LIMIT) && !defined (NO_SOCKETS) && !__minix__
+#ifdef USE_MSRPC
+int32_t MaxTasks = RPC_C_LISTEN_MAX_CALLS_DEFAULT;
+#else // !USE_MSRPC
+int32_t MaxTasks = SEM_VALUE_MAX;
+#endif // !USE_MSRPC
+#endif // !defined(NO_LIMIT) && !defined (NO_SOCKETS) && !__minix__
 
 #ifndef NO_LOG
 char *fn_log = NULL;
@@ -59,14 +67,14 @@ uint16_t Lcid = 0;
 SOCKET *SocketList;
 int numsockets = 0;
 
-#ifndef NO_LIMIT
+#if !defined(NO_LIMIT) && !__minix__
 #ifndef _WIN32 // Posix
 sem_t *Semaphore;
 #else // _WIN32
 HANDLE Semaphore;
 #endif // _WIN32
 
-#endif // NO_LIMIT
+#endif // !defined(NO_LIMIT) && !__minix__
 #endif // NO_SOCKETS
 
 #ifdef _NTSERVICE

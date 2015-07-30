@@ -1,3 +1,7 @@
+#ifndef _DEFAULT_SOURCE
+#define _DEFAULT_SOURCE
+#endif // _DEFAULT_SOURCE
+
 #ifndef CONFIG
 #define CONFIG "config.h"
 #endif // CONFIG
@@ -73,6 +77,7 @@ static void vlogger(const char *message, va_list args)
 }
 
 
+// Always sends to log output
 int logger(const char *const fmt, ...)
 {
 	va_list args;
@@ -86,6 +91,7 @@ int logger(const char *const fmt, ...)
 #endif //NO_LOG
 
 
+// Output to stderr if it is available or to log otherwise (e.g. if running as daemon/service)
 void printerrorf(const char *const fmt, ...)
 {
 	va_list arglist;
@@ -110,6 +116,7 @@ void printerrorf(const char *const fmt, ...)
 }
 
 
+// Always output to stderr
 int errorout(const char* fmt, ...)
 {
 	va_list args;
@@ -154,47 +161,51 @@ void logRequestVerbose(const REQUEST *const Request, const PRINTFUNC p)
 	ProdListIndex_t index;
 
 	p("Protocol version                : %u.%u\n", LE16(Request->MajorVer), LE16(Request->MinorVer));
-	p("Client is a virtual machine     : %s\n", LE32(Request->IsClientVM) ? "Yes" : "No");
-	p("Current client license status   : %u (%s)\n", (uint32_t)LE32(Request->LicenseStatus), LE32(Request->LicenseStatus) < _countof(LicenseStatusText) ? LicenseStatusText[LE32(Request->LicenseStatus)] : "Unknown");
-	p("Remaining time (0 = forever)    : %i minutes\n", (uint32_t)LE32(Request->GraceTime));
+	p("Client is a virtual machine     : %s\n", LE32(Request->VMInfo) ? "Yes" : "No");
+	p("Licensing status                : %u (%s)\n", (uint32_t)LE32(Request->LicenseStatus), LE32(Request->LicenseStatus) < _countof(LicenseStatusText) ? LicenseStatusText[LE32(Request->LicenseStatus)] : "Unknown");
+	p("Remaining time (0 = forever)    : %i minutes\n", (uint32_t)LE32(Request->BindingExpiration));
 
-	uuid2StringLE(&Request->AppId, guidBuffer);
-	productName = getProductNameLE(&Request->AppId, AppList, &index);
+	uuid2StringLE(&Request->AppID, guidBuffer);
+	productName = getProductNameLE(&Request->AppID, AppList, &index);
 	p("Application ID                  : %s (%s)\n", guidBuffer, productName);
 
-	uuid2StringLE(&Request->SkuId, guidBuffer);
+	uuid2StringLE(&Request->ActID, guidBuffer);
 
 	#ifndef NO_EXTENDED_PRODUCT_LIST
-	productName = getProductNameLE(&Request->SkuId, ExtendedProductList, &index);
+	productName = getProductNameLE(&Request->ActID, ExtendedProductList, &index);
 	#else
 	productName = "Unknown";
 	#endif
 
-	p("Client SKU ID                   : %s (%s)\n", guidBuffer, productName);
+	p("Activation ID (Product)         : %s (%s)\n", guidBuffer, productName);
 
-	uuid2StringLE(&Request->KmsId, guidBuffer);
+	uuid2StringLE(&Request->KMSID, guidBuffer);
 
 	#ifndef NO_BASIC_PRODUCT_LIST
-	productName = getProductNameLE(&Request->KmsId, ProductList, &index);
+	productName = getProductNameLE(&Request->KMSID, ProductList, &index);
 	#else
 	productName = "Unknown";
 	#endif
 
-	p("Server SKU ID                   : %s (%s)\n", guidBuffer, productName);
+	p("Key Management Service ID       : %s (%s)\n", guidBuffer, productName);
 
-	uuid2StringLE(&Request->ClientMachineId, guidBuffer);
+	uuid2StringLE(&Request->CMID, guidBuffer);
 	p("Client machine ID               : %s\n", guidBuffer);
+
+	uuid2StringLE(&Request->CMID_prev, guidBuffer);
+	p("Previous client machine ID      : %s\n", guidBuffer);
+
 
 	char mbstr[64];
 	time_t st;
-	st = fileTimeToUnixTime(&Request->TimeStamp);
+	st = fileTimeToUnixTime(&Request->ClientTime);
 	strftime(mbstr, sizeof(mbstr), "%Y-%m-%d %X", gmtime(&st));
-	p("Time stamp (UTC)                : %s\n", mbstr);
+	p("Client request timestamp (UTC)  : %s\n", mbstr);
 
 	ucs2_to_utf8(Request->WorkstationName, WorkstationBuffer, WORKSTATION_NAME_BUFFER, sizeof(WorkstationBuffer));
 
 	p("Workstation name                : %s\n", WorkstationBuffer);
-	p("Minimum required clients        : %u\n", (uint32_t)LE32(Request->MinimumClients));
+	p("N count policy (minimum clients): %u\n", (uint32_t)LE32(Request->N_Policy));
 }
 
 
@@ -206,24 +217,24 @@ void logResponseVerbose(const char *const ePID, const BYTE *const hwid, const RE
 	p("Protocol version                : %u.%u\n", (uint32_t)LE16(response->MajorVer), (uint32_t)LE16(response->MinorVer));
 	p("KMS host extended PID           : %s\n", ePID);
 	if (LE16(response->MajorVer) > 5)
-#		ifndef _WIN32
-		p("KMS host Hardware ID            : %016llX\n", (unsigned long long)BE64(*(uint64_t*)hwid));
-#		else // _WIN32
-		p("KMS host Hardware ID            : %016I64X\n", (unsigned long long)BE64(*(uint64_t*)hwid));
-#		endif // WIN32
+#	ifndef _WIN32
+	p("KMS host Hardware ID            : %016llX\n", (unsigned long long)BE64(*(uint64_t*)hwid));
+#	else // _WIN32
+	p("KMS host Hardware ID            : %016I64X\n", (unsigned long long)BE64(*(uint64_t*)hwid));
+#	endif // WIN32
 
-	uuid2StringLE(&response->ClientMachineId, guidBuffer);
+	uuid2StringLE(&response->CMID, guidBuffer);
 	p("Client machine ID               : %s\n", guidBuffer);
 
 	char mbstr[64];
 	time_t st;
 
-	st = fileTimeToUnixTime(&response->TimeStamp);
+	st = fileTimeToUnixTime(&response->ClientTime);
 	strftime(mbstr, sizeof(mbstr), "%Y-%m-%d %X", gmtime(&st));
-	p("Time stamp (UTC)                : %s\n", mbstr);
+	p("Client request timestamp (UTC)  : %s\n", mbstr);
 
-	p("KMS host current active clients : %u\n", (uint32_t)LE32(response->ActivatedMachines));
-	p("Activation renewal interval     : %u\n", (uint32_t)LE32(response->RenewalInterval));
-	p("Activation retry interval       : %u\n", (uint32_t)LE32(response->ActivationInterval));
+	p("KMS host current active clients : %u\n", (uint32_t)LE32(response->Count));
+	p("Renewal interval policy         : %u\n", (uint32_t)LE32(response->VLRenewalInterval));
+	p("Activation interval policy      : %u\n", (uint32_t)LE32(response->VLActivationInterval));
 }
 

@@ -37,18 +37,18 @@
  */
 
 #ifndef EPID_WINDOWS
-#define EPID_WINDOWS "06401-00206-271-598387-03-1033-9600.0000-0062015"
+#define EPID_WINDOWS "06401-00206-271-298329-03-1033-9600.0000-0452015"
 #endif
 
 #ifndef EPID_OFFICE2010
-#define EPID_OFFICE2010 "06401-00096-199-109483-03-1033-9600.0000-0062015"
+#define EPID_OFFICE2010 "06401-00096-199-198322-03-1033-9600.0000-0452015"
 #endif
 
 #ifndef EPID_OFFICE2013
-#define EPID_OFFICE2013 "06401-00206-234-498343-03-1033-9600.0000-0062015"
+#define EPID_OFFICE2013 "06401-00206-234-398213-03-1033-9600.0000-0452015"
 #endif
 
-#ifndef HWID
+#ifndef HWID // HwId from the Ratiborus VM
 #define HWID 0x36, 0x4F, 0x46, 0x3A, 0x88, 0x63, 0xD3, 0x5F
 #endif
 
@@ -62,6 +62,27 @@
  */
 
 
+
+/*
+ * -------------------------------
+ * Defaults
+ * -------------------------------
+ */
+
+
+#ifndef INI_FILE
+/*
+ * Uncomment and customize the following line if you want vlmcsd to look for an ini file
+ * at a default location
+ */
+
+//#define INI_FILE "/etc/vlmcsd.ini"
+
+#endif // INI_FILE
+
+
+
+
 /*
  * ----------------------------------------------------------------------------------------
  * Troubleshooting options. Please note that disabling features may also help troubleshooting.
@@ -70,6 +91,31 @@
  * commented out.
  * ----------------------------------------------------------------------------------------
  */
+
+
+#ifndef CHILD_HANDLER
+/*
+ * Uncomment the following #define if you are compiling for a platform that does
+ * not correctly handle the SA_NOCLDWAIT flag when ignoring SIGCHLD, i.e. forked
+ * processes remain as "zombies" after dying. This option will add SIGCHLD handler that
+ * "waits" for a child that has terminated. This is only required for a few
+ * unixoid OSses.
+ */
+
+//#define CHILD_HANDLER
+
+#endif // CHILD_HANDLER
+
+
+#ifndef NO_TIMEOUT
+/*
+ * Uncomment the following #define if you are compiling for a platform that does
+ * not support custom socket send or receive timeouts.
+ */
+
+//#define NO_TIMEOUT
+
+#endif // NO_TIMEOUT
 
 
 #ifndef NO_DNS

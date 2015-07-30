@@ -13,6 +13,7 @@
 #include "crypto.h"
 
 #define Sha256(d, l, h)  SHA256(d, l, h)
+int_fast8_t Sha256Hmac(BYTE* key, BYTE* restrict data, DWORD len, BYTE* restrict hmac);
 
 #ifndef _OPENSSL_NO_HMAC
 #define Sha256HmacCtx    HMAC_CTX

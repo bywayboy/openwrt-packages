@@ -10,12 +10,39 @@
 #include <limits.h>
 #include <stdint.h>
 
-#ifdef __sun__
+//#ifdef __sun__
+//#include <alloca.h>
+//#endif
+#ifndef alloca
+#ifdef __GNUC__
+#define alloca(x) __builtin_alloca(x)
+#endif // __GNUC__
+#endif // alloca
+
+#ifndef alloca
+#if _MSC_VER
+#define alloca _malloca
+#endif // _MSC_VER
+#endif // alloca
+
+#ifndef alloca
+#ifdef __has_builtin // clang feature test
+#if __has_builtin(__builtin_alloca)
+#define alloca(x) __builtin_alloca(x)
+#endif // __has_builtin(__builtin_alloca)
+#endif // __has_builtin
+#endif // alloca
+
+#ifndef alloca
 #include <alloca.h>
 #endif
 
 #ifndef __packed
+#if _MSC_VER
+#define __packed
+#else // !_MSC_VER
 #define __packed  __attribute__((packed))
+#endif // !_MSC_VER
 #endif
 
 #ifndef __pure
@@ -103,9 +130,9 @@ typedef uint8_t ProdListIndex_t;
 #define _NTSERVICE
 #endif
 
-#if (defined(_WIN32) || defined(NO_SOCKETS)) && !defined(NO_SIGHUP)
+#if (defined(__CYGWIN__) || defined(_WIN32) || defined(NO_SOCKETS)) && !defined(NO_SIGHUP)
 #define NO_SIGHUP
-#endif // (defined(_WIN32) || defined(NO_SOCKETS)) && !defined(NO_SIGHUP)
+#endif // (defined(__CYGWIN__) || defined(_WIN32) || defined(NO_SOCKETS)) && !defined(NO_SIGHUP)
 
 #ifdef _WIN32
 #ifndef USE_THREADS
@@ -121,9 +148,13 @@ typedef uint8_t ProdListIndex_t;
 
 #define GUID_STRING_LENGTH 36
 
-#ifdef _WIN32
+#if defined(_WIN32)
+
+#ifndef USE_MSRPC
 #include <winsock2.h>
 #include <ws2tcpip.h>
+#endif // USE_MSRPC
+
 #include <windows.h>
 
 
@@ -181,7 +212,7 @@ typedef struct {
 	DWORD  dwHighDateTime;
 } /*__packed*/ FILETIME;
 
-#endif
+#endif // defined(__CYGWIN__)
 
 #ifndef _WIN32
 // Map VLMCSD error codes to POSIX codes
@@ -213,6 +244,14 @@ typedef void* sockopt_t;
 
 #undef IsEqualGUID
 #define IsEqualGUID(a, b)  ( !memcmp(a, b, sizeof(GUID)) )
+
+#ifndef __stdcall
+#define __stdcall
+#endif
+
+#ifndef __cdecl
+#define __cdecl
+#endif
 
 typedef const char *const * CARGV;
 

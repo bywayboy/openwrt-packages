@@ -6,6 +6,9 @@
 #endif // CONFIG
 #include CONFIG
 
+#if defined(USE_MSRPC) && defined(_WIN32)
+#include <winsock2.h>
+#endif // defined(USE_MSRPC) && defined(_WIN32)
 #include "types.h"
 
 #if MULTI_CALL_BINARY < 1

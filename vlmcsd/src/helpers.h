@@ -24,5 +24,11 @@ BOOL ucs2_to_utf8(const WCHAR* const ucs2_le, char* utf8, size_t maxucs2, size_t
 int_fast8_t string2Uuid(const char *const restrict input, GUID *const restrict guid);
 void randomNumberInit();
 void LEGUID(GUID *const restrict result, const GUID* const restrict guid);
+void parseAddress(char *const addr, char** szHost, char** szPort);
 __noreturn void OutOfMemory(void);
+void* vlmcsd_malloc(size_t len);
+void hex2bin(BYTE *const bin, const char *hex, const size_t maxbin);
+__pure BOOL getArgumentBool(int_fast8_t *result, const char *const argument);
+
+
 #endif // HELPERS_H

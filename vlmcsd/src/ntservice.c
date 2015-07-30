@@ -7,6 +7,7 @@
 #include "shared_globals.h"
 #include "vlmcsd.h"
 #include "output.h"
+#include "helpers.h"
 
 #ifdef _NTSERVICE
 
@@ -17,28 +18,30 @@ static VOID WINAPI ServiceCtrlHandler(const DWORD dwCtrl)
 {
    // Handle the requested control code.
 
-   switch(dwCtrl)
-   {
-      case SERVICE_CONTROL_STOP:
-      case SERVICE_CONTROL_SHUTDOWN:
+	switch(dwCtrl)
+	{
+		case SERVICE_CONTROL_STOP:
+		case SERVICE_CONTROL_SHUTDOWN:
 
-    	  ServiceShutdown = TRUE;
-    	  ReportServiceStatus(SERVICE_STOP_PENDING, NO_ERROR, 0);
+			ServiceShutdown = TRUE;
+			ReportServiceStatus(SERVICE_STOP_PENDING, NO_ERROR, 0);
 
-    	  // Remove PID file and free ressources
-    	  cleanup(TRUE);
+			// Remove PID file and free ressources
+			cleanup();
+#			ifdef USE_MSRPC
+			ReportServiceStatus(SERVICE_STOPPED, NO_ERROR, 0);
+#			endif // !USE_MSRPC
+			return;
 
-    	  return;
+		/*case SERVICE_CONTROL_INTERROGATE:
+			break;*/
 
-      /*case SERVICE_CONTROL_INTERROGATE:
-         break;*/
-
-      default:
-         break;
-   }
+		default:
+			break;
+	}
 }
 
-static VOID WINAPI ServiceMain(const int argc, CARGV argv)
+static VOID WINAPI ServiceMain(const int argc_unused, CARGV argv_unused)
 {
     // Register the handler function for the service
 
@@ -241,13 +244,10 @@ static VOID ServiceInstaller(const char *restrict ServiceUser, const char *const
     	// Allow Local Users without .\ , e.g. "johndoe" instead of ".\johndoe"
     	if (!strchr(ServiceUser, '\\'))
     	{
-    		tempUser = (char*)malloc(strlen(ServiceUser) + 3);
-    		if (tempUser)
-    		{
-    			strcpy(tempUser, ".\\");
-    			strcat(tempUser, ServiceUser);
-    			ServiceUser = tempUser;
-    		}
+    		tempUser = (char*)vlmcsd_malloc(strlen(ServiceUser) + 3);
+   			strcpy(tempUser, ".\\");
+   			strcat(tempUser, ServiceUser);
+   			ServiceUser = tempUser;
     	}
     }
 

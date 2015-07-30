@@ -17,6 +17,7 @@
 #include "helpers.h"
 #include "output.h"
 #include "endian.h"
+#include "shared_globals.h"
 
 
 /*
@@ -229,7 +230,7 @@ __pure int getOptionArgumentInt(const char o, const int min, const int max)
 // Resets getopt() to start parsing from the beginning
 void optReset(void)
 {
-	#if defined(__BSD__) || defined(__APPLE__) || defined(__FreeBSD__) || defined(__NetBSD__) || defined(__DragonFly__) || defined(__OpenBSD__)
+	#if __minix__ || defined(__BSD__) || defined(__APPLE__) || defined(__FreeBSD__) || defined(__NetBSD__) || defined(__DragonFly__) || defined(__OpenBSD__)
 	optind = 1;
 	optreset = 1; // Makes newer BSD getopt happy
 	#elif defined(__UCLIBC__) // uClibc headers also define __GLIBC__ so be careful here
@@ -242,7 +243,7 @@ void optReset(void)
 }
 
 
-#ifdef _WIN32
+#if defined(_WIN32) || defined(USE_MSRPC)
 
 // Returns a static message buffer containing text for a given Win32 error. Not thread safe (same as strerror)
 char* win_strerror(const int message)
@@ -254,7 +255,41 @@ char* win_strerror(const int message)
 	return buffer;
 }
 
-#endif // _WIN32
+#endif // defined(_WIN32) || defined(USE_MSRPC)
+
+
+/*
+ * parses an address in the form host:[port] in addr
+ * returns host and port in seperate strings
+ */
+void parseAddress(char *const addr, char** szHost, char** szPort)
+{
+	*szHost = addr;
+
+#	ifndef NO_SOCKETS
+	*szPort = (char*)defaultport;
+#	else // NO_SOCKETS
+	*szPort = "1688";
+#	endif // NO_SOCKETS
+
+	char *lastcolon = strrchr(addr, ':');
+	char *firstcolon = strchr(addr, ':');
+	char *closingbracket = strrchr(addr, ']');
+
+	if (*addr == '[' && closingbracket) //Address in brackets
+	{
+		*closingbracket = 0;
+		(*szHost)++;
+
+		if (closingbracket[1] == ':')
+			*szPort = closingbracket + 2;
+	}
+	else if (firstcolon && firstcolon == lastcolon) //IPv4 address or hostname with port
+	{
+		*firstcolon = 0;
+		*szPort = firstcolon + 1;
+	}
+}
 
 
 // Initialize random generator (needs to be done in each thread)
@@ -273,4 +308,62 @@ __noreturn void OutOfMemory(void)
 	exit(!0);
 }
 
+
+void* vlmcsd_malloc(size_t len)
+{
+	void* buf = malloc(len);
+	if (!buf) OutOfMemory();
+	return buf;
+}
+
+
+/*
+ * Converts hex digits to bytes in big-endian order.
+ * Ignores any non-hex characters
+ */
+void hex2bin(BYTE *const bin, const char *hex, const size_t maxbin)
+{
+	static const char *const hexdigits = "0123456789ABCDEF";
+	char* nextchar;
+	size_t i;
+
+	for (i = 0; (i < 16) && utf8_to_ucs2_char((const unsigned char*)hex, (const unsigned char**)&nextchar) != (WCHAR)-1; hex = nextchar)
+	{
+		const char* pos = strchr(hexdigits, toupper((int)*hex));
+		if (!pos) continue;
+
+		if (!(i & 1)) bin[i >> 1] = 0;
+		bin[i >> 1] |= (char)(pos - hexdigits);
+		if (!(i & 1)) bin[i >> 1] <<= 4;
+		i++;
+		if (i >> 1 > maxbin) break;
+	}
+}
+
+
+__pure BOOL getArgumentBool(int_fast8_t *result, const char *const argument)
+{
+	if (
+		!strncasecmp(argument, "true", 4) ||
+		!strncasecmp(argument, "on", 4) ||
+		!strncasecmp(argument, "yes", 3) ||
+		!strncasecmp(argument, "1", 1)
+	)
+	{
+		*result = TRUE;
+		return TRUE;
+	}
+	else if (
+			!strncasecmp(argument, "false", 5) ||
+			!strncasecmp(argument, "off", 3) ||
+			!strncasecmp(argument, "no", 2) ||
+			!strncasecmp(argument, "0", 1)
+	)
+	{
+		*result = FALSE;
+		return TRUE;
+	}
+
+	return FALSE;
+}
 
